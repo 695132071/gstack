@@ -234,16 +234,65 @@ test('the installed docs-candidate helper is admitted only with a private .json 
   expect(docsNativeInterface(fixture)).toContain('compare <that .json> and --help commands');
 });
 
-// Train gate 39904966815 (ship-docsync-completion, attempt 1) and GSTA-63's focused run joined the candidate's
-// --help onto a line of reads. The join stays refused; the own-call rule now sits in the sentence naming --help.
-test('a candidate --help joined to reads stays refused, and the interface says so where it names the command', () => {
+// Train gate 39904966815 and GSTA-63's focused run joined the candidate's --help onto a line of reads; v1.91.185.0 moved the
+// own-call rule into the sentence naming --help and the slip came back four times (JOINED_READ_LINES below). The --help only
+// prints usage, so it now joins a line of reads like a Git read; every other own-call command stays alone.
+test('a candidate --help joined to reads is a read, and the interface names it as the one exception to the own-call rule', () => {
   const skills = fixture.skills.split(path.sep).join('/');
-  const joined = `git diff; git diff --cached; cat options.ts; ls -la handbook handbook/reference handbook/reference/commands; ${skills}/bin/gstack-docs-candidate --help`;
-  expect(docsCommandAllowed(joined, fixture)).toBe(false);
-  expect(docsCommandAllowed(`${skills}/bin/gstack-docs-candidate --help`, fixture)).toBe(true);
+  const candidate = `${skills}/bin/gstack-docs-candidate`;
+  const joined = `git diff; git diff --cached; cat options.ts; ls -la handbook handbook/reference handbook/reference/commands; ${candidate} --help`;
+  expect(docsCommandAllowed(joined, fixture)).toBe(true);
+  for (const command of [`${candidate} --help`, `${candidate} --help 2>&1`, `git status; ${candidate} snapshot --help`, `${candidate} compare --help 2>/dev/null; git log --oneline -3`,
+    `${candidate} --help | head -20`]) expect(docsCommandAllowed(command, fixture), command).toBe(true);
+  const record = path.join(fixture.home, 'c.json');
+  for (const command of [
+    `git status; ${candidate} snapshot --out ${record} --audit-id a --mode edit --base main`, `git status; ${candidate} compare ${record}`,
+    `${candidate} --help; git add app.ts`, `${candidate} --help > ${path.join(fixture.home, 'usage.md')}`, `${candidate} --help | sh`,
+    `echo x | ${candidate} --help`, `git status | ${candidate} --help`, `cd ${fixture.repo} && ${candidate} --help`, `git status; ${candidate} --help snapshot`,
+    `git status; ${candidate} --version`, `git status; ${candidate} -h`, `git status; ${candidate} --help --exec rm`,
+    `git status; ~/.claude/skills/gstack/bin/gstack-docs-candidate --help`, `git status; ${path.join(path.dirname(fixture.home), 'bin/gstack-docs-candidate')} --help`,
+    `git status; ${skills}/bin/gstack-skill-start --help`, `git status; ${skills}/bin/gstack-skill-end --help`,
+  ]) expect(docsCommandAllowed(command, fixture), command).toBe(false);
   const sentence = docsNativeInterface(fixture).split(/(?<=\.)\s+(?=[A-Z])/).find(part => part.includes('gstack-docs-candidate snapshot'));
   expect(sentence).toContain('as its own Bash call, with nothing joined before or after it');
-  expect(sentence).toContain('a --help is no exception');
+  expect(sentence).not.toContain('a --help is no exception');
+  expect(docsNativeInterface(fixture)).toContain(`So may the installed ${candidate} --help, alone or after snapshot or compare, because it only prints usage (the one exception)`);
+});
+
+// Five red ship-docsync parents, each red only on 'command outside declared docs observation interface', and each with exactly
+// one refused line (every other Bash call of the five captures replays clean): four joined the candidate's --help onto a line of
+// reads, and gate 40643690306 put `git tag` in one. {home} is the fixture home; the sha is the capture file's sha256 prefix.
+const JOINED_READ_LINES: Array<[source: string, scenario: 'current' | 'store', line: string]> = [
+  ['screen 40558235014 slice 5 @ 70cedc3d, capture c73fb9d0b1b0', 'current',
+    'git diff main HEAD; cat personal-note.txt; ls -la; find handbook; {home}/.claude/skills/gstack/bin/gstack-docs-candidate --help'],
+  ['gate 40600731931 slice 4 @ 5fef38a5, capture 606503d8b78a', 'store',
+    'cat handbook/reference/commands/widget.md.tmpl; echo ---; cat CHANGELOG.md TODOS.md VERSION package.json AGENTS.md; echo ---; cat personal-note.txt; echo ---; find handbook; {home}/.claude/skills/gstack/bin/gstack-docs-candidate --help'],
+  ['screen 40627127462 slice 5 @ 76a155d4, capture 67fa4dea377a', 'current',
+    'git diff main...HEAD; cat handbook/reference/commands/widget.md.tmpl; ls -la handbook handbook/reference handbook/reference/commands; cat personal-note.txt | head -3; {home}/.claude/skills/gstack/bin/gstack-docs-candidate --help'],
+  ['screen 40627127462 rerun 1 @ 76a155d4, capture 53d06fea1a89', 'current',
+    'git diff main HEAD; git rev-parse origin/main; {home}/.claude/skills/gstack/bin/gstack-docs-candidate --help 2>&1'],
+  ['gate 40643690306 slice 4 @ c188a78c, capture 6ac1902bd83f', 'store',
+    'git rev-parse HEAD origin/main; git merge-base main HEAD; git tag; cat {home}/fixture-interface.md | head -5; ls {home}'],
+];
+
+test.each(JOINED_READ_LINES)('captured joined read line from %s is a declared read', (_source, scenario, line) => {
+  const owned = fixtureDocs(scenario);
+  try {
+    const command = line.replaceAll('{home}', owned.home);
+    const publish = path.join(owned.home, 'fixture-publish.ts');
+    expect(docsCommandAllowed(command, owned, [publish])).toBe(true);
+    expect(docsToolFailures(nativeResult(command, 'usage: gstack-docs-candidate snapshot ...'), owned, [publish], true)).toEqual([]);
+    expect(docsCommandAllowed(`${command}; git add app.ts`, owned, [publish])).toBe(false);
+  } finally { owned.clean(); }
+});
+
+test('operand-free tag listings are reads, and every tag write stays refused', () => {
+  for (const listing of ['git tag', 'git tag -l', 'git tag --list', 'git status; git tag; git log --oneline -3'])
+    expect(docsCommandAllowed(listing, fixture), listing).toBe(true);
+  for (const write of ['git tag v1', 'git tag -a v1 -m release', 'git tag -d v1', 'git tag -f v1 HEAD~1', 'git tag -s v1', 'git tag -v v1', 'git tag -l "v*"',
+    'git tag --contains HEAD', 'git tag -n', 'git tag --sort=-v:refname', 'git tag -l v1', 'git tag; git tag v2', 'git tag | sh'])
+    expect(docsCommandAllowed(write, fixture), write).toBe(false);
+  expect(docsNativeInterface(fixture)).toContain('tag listings with no operand and only -l/--list');
 });
 
 test('the installed lifecycle helpers are admitted for their own --help, which starts nothing', () => {

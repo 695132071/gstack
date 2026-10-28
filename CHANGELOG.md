@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.91.296.0] - 2026-10-28
+
+**The docsync gate stops failing ship-docsync-current and ship-docsync-store when the agent asks the docs helper for its usage in the middle of a line of reads.** Five red paid trials since 2026-10-27 each failed on a single refused line. In four, the agent ended a line of reads with `gstack-docs-candidate --help` (screen 40558235014, gate 40600731931, and screen 40627127462 twice). In the fifth, gate 40643690306, the line included `git tag`. v1.91.185.0 tried to stop the first slip by moving the "own Bash call" rule into the sentence that names `--help`, and the slip came back four times. The helper's `--help` prints its usage and returns before it touches Git or any file, so refusing it protected nothing. The 2026-10-27 backstop red (40515158924, `toContain`) ran on a tree from before #3516, which had already fixed it.
+
+### Fixed
+- **`test/helpers/docsync-observer.ts`**: a line of reads may now include the installed candidate's `--help`, either alone or after `snapshot` or `compare`, optionally with `2>&1` or `2>/dev/null`. It counts as a neutral read, the same way a joined Git read does, but never when it is fed by a pipe and never in a line that also runs `cd`. `git tag`, `git tag -l` and `git tag --list` are now accepted as Git reads, alongside the branch listings #3516 added. A tag operand or any other option is still refused.
+- **`test/helpers/docsync-interface.ts`**: the fixture interface declares both changes. It names the candidate's `--help` as the one exception to the own-call rule, and it adds tag listings to the Git read list.
+
+### Tests
+- `test/docsync-command-grammar.test.ts` replays the five captured lines, which were refused before this change, and checks that each is now accepted, while the same line with `; git add app.ts` appended is still refused. Negative controls that stay refused: pipe-fed, `| sh`, `>` redirect and `cd` forms; `snapshot` and `compare` joined to reads; `-h`, `--version` and `--help snapshot`; the `~` and foreign helper paths; the lifecycle helpers' `--help` joined to reads; and 13 tag writes or filtered listings.
+
+### Gate integrity
+- This is a gate edit, because the docs detector now accepts more lines. The test that pinned the joined `--help` as refused now expects it to be accepted. Focused paid trials at e967634: ship-docsync-current PASS ($0.84; its agent did join `--help` onto a line of reads) and ship-docsync-store PASS ($0.84).
+
 ## [1.91.295.0] - 2026-10-28
 
 **Deleting or renaming a test no longer fails pregate with PREGATE_NO_LANE.** A PR that removed a test file, or renamed one, failed `lanes` because the removed path had no test lane of its own, so cleanup PRs needed a hand-written `dependencies` entry to pass (#3529). Pregate now accounts for a removed test the way it accounts for an edit. A renamed test runs under its new name, a deleted test runs the remaining tests of the files it exercised, and either one runs the tests of any file that still names it, such as a curation list. Every waived test is printed on its own line, so the reason is visible in the gate output. Removing any other file still needs a lane, as before.

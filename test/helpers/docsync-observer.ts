@@ -322,9 +322,12 @@ function docsUnrollLoops(text: string): string | null {
 
 /**
  * A read-only line the shared grammar cannot see whole: loops are checked as
- * their unrolled passes, and each declared Git read joined to grammar reads
- * (never after a cd, never fed by a pipe) is checked literally and then stands
- * in the line as a neutral read for the grammar.
+ * their unrolled passes, and each declared Git read or installed candidate
+ * --help joined to grammar reads (never after a cd, never fed by a pipe) is
+ * checked literally and then stands in the line as a neutral read for the grammar.
+ * The candidate's --help prints its usage and returns before it touches Git or a
+ * file (bin/gstack-docs-candidate main), so joining it reads nothing more (gates
+ * 40600731931 and 40627127462, screen 40558235014: the parent ended a line of reads with it).
  */
 function docsComposedReadAllowed(text: string, fixture: ReturnType<typeof fixtureDocs>): boolean {
   const line = docsUnrollLoops(text);
@@ -332,13 +335,16 @@ function docsComposedReadAllowed(text: string, fixture: ReturnType<typeof fixtur
   if (line !== text && readOnlyCommandAllowed(line, docsReadOnlyScope(fixture))) return true;
   const segments = docsTopLevelSegments(line);
   if (!segments) return false;
+  const candidate = path.join(fixture.skills, 'bin/gstack-docs-candidate').split(path.sep).join('/');
   const commands = segments.map(segment => line.slice(segment.start, segment.end).trim());
-  const git = commands.flatMap((command, index) => /^git(?:\s|$)/.test(command) ? [index] : []);
-  if (!git.length || commands.some(command => /^cd(?:\s|$)/.test(command))) return false;
+  const declared = commands.flatMap((command, index) => /^git(?:\s|$)/.test(command) || command.startsWith(`${candidate} `) ? [index] : []);
+  if (!declared.length || commands.some(command => /^cd(?:\s|$)/.test(command))) return false;
   let neutral = line;
-  for (const index of git.reverse()) {
+  for (const index of declared.reverse()) {
     const read = unwrapHarmlessRead(commands[index]!, fixture);
-    if (segments[index - 1]?.op === '|' || read === null || !/^git\s/.test(read) || !literalDocsCommandAllowed(read, fixture, [])) return false;
+    const help = read !== null && /^(?:(?:snapshot|compare) )?--help$/.test(read.slice(candidate.length + 1));
+    if (segments[index - 1]?.op === '|' || read === null || !(/^git\s/.test(read) || (read.startsWith(`${candidate} `) && help))
+      || !literalDocsCommandAllowed(read, fixture, [])) return false;
     neutral = `${neutral.slice(0, segments[index]!.start)} pwd ${neutral.slice(segments[index]!.end)}`;
   }
   return readOnlyCommandAllowed(neutral, docsReadOnlyScope(fixture));
@@ -384,6 +390,9 @@ function literalDocsCommandAllowed(text: string, fixture: ReturnType<typeof fixt
     // A branch listing reads refs (gates 40458489644 and 40477638211: the parent oriented with `git branch -a`);
     // an operand or any other option creates, moves, deletes or retargets a branch.
     if (rest[0] === 'branch') return rest.slice(1).every(arg => DOCS_BRANCH_LIST_FLAGS.test(arg));
+    // A tag listing reads refs the same way (gate 40643690306: the parent ended a line of reads with `git tag`);
+    // an operand or any other option creates, deletes, signs or verifies a tag.
+    if (rest[0] === 'tag') return rest.slice(1).every(arg => arg === '-l' || arg === '--list');
     if (rest[0] === 'describe') {
       const operands = rest.slice(1).filter(arg => !DOCS_DESCRIBE_FLAGS.test(arg));
       return operands.length <= 1 && operands.every(arg => !arg.startsWith('-'));
