@@ -24,9 +24,10 @@ import { atomicWriteSync } from '../../lib/fs-atomic';
 import { readPidCmdline, readPidStartTime } from './xvfb';
 import { emptyBunConfig, findWindowsBunExe, type BunExeLookup } from './bun-child-config';
 
-function agentProcessInfo(pid: number): { startTime: string; commandLine: string } {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return { startTime: '', commandLine: '' };
-  if (process.platform !== 'win32') return { startTime: readPidStartTime(pid), commandLine: readPidCmdline(pid) };
+const FILETIME_UNIX_EPOCH_MS = 11_644_473_600_000n;
+let win32Kernel: any;
+
+function windowsProcessQuery(pid: number): { startTime: string; commandLine: string } {
   const script = `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | Select-Object CreationDate,CommandLine | ConvertTo-Json -Compress)`;
   try {
     const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 2000 });
@@ -36,8 +37,40 @@ function agentProcessInfo(pid: number): { startTime: string; commandLine: string
   } catch { return { startTime: '', commandLine: '' }; }
 }
 
+export const win32CreationTimeSource = {
+  read(pid: number): string | undefined {
+    if (!process.versions.bun) return;
+    try {
+      const { dlopen, FFIType, ptr } = require('bun:ffi');
+      win32Kernel ??= dlopen('kernel32.dll', {
+        OpenProcess: { args: [FFIType.u32, FFIType.i32, FFIType.u32], returns: FFIType.u64 },
+        GetProcessTimes: { args: [FFIType.u64, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+        CloseHandle: { args: [FFIType.u64], returns: FFIType.i32 },
+      }).symbols;
+      const handle = win32Kernel.OpenProcess(0x1000, 0, pid);
+      if (!handle) return;
+      try {
+        const times = new BigUint64Array(4);
+        if (!win32Kernel.GetProcessTimes(handle, ptr(times, 0), ptr(times, 8), ptr(times, 16), ptr(times, 24)) || times[0] === 0n) return;
+        return `/Date(${times[0] / 10_000n - FILETIME_UNIX_EPOCH_MS})/`;
+      } finally {
+        win32Kernel.CloseHandle(handle);
+      }
+    } catch { return; }
+  },
+};
+
+function agentProcessInfo(pid: number): { startTime: string; commandLine: string } {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return { startTime: '', commandLine: '' };
+  if (process.platform !== 'win32') return { startTime: readPidStartTime(pid), commandLine: readPidCmdline(pid) };
+  const query = windowsProcessQuery(pid);
+  return { startTime: win32CreationTimeSource.read(pid) ?? query.startTime, commandLine: query.commandLine };
+}
+
 export function readAgentStartTime(pid: number): string {
-  return agentProcessInfo(pid).startTime;
+  if (!Number.isSafeInteger(pid) || pid <= 0) return '';
+  if (process.platform !== 'win32') return readPidStartTime(pid);
+  return win32CreationTimeSource.read(pid) ?? windowsProcessQuery(pid).startTime;
 }
 
 const pendingAgentExits = new Set<any>();
@@ -335,7 +368,8 @@ function agentStatus(record: AgentRecord, ownerPid?: number): 'owned' | 'gone' |
   if (ownerPid !== undefined && (record.ownerPid !== ownerPid || record.ownerStartTime !== readAgentStartTime(ownerPid))) return 'unknown';
   const actual = agentProcessInfo(record.pid);
   if (!actual.startTime) return isAgentRecordLive(record) ? 'unknown' : 'gone';
-  if (actual.startTime !== record.startTime) return 'gone';
+  if (actual.startTime !== record.startTime && process.platform !== 'win32') return 'gone';
+  if (actual.startTime !== record.startTime && !actual.commandLine) return 'unknown';
   try {
     let state: string | undefined;
     if (process.platform === 'linux') {
@@ -348,7 +382,7 @@ function agentStatus(record: AgentRecord, ownerPid?: number): 'owned' | 'gone' |
   } catch {}
   if (!isAgentRecordLive(record)) return 'gone';
   return actual.commandLine.split(/\s+/).some(arg => arg.replace(/^['"]|['"]$/g, '') === `--agent-gen=${record.gen}`)
-    ? 'owned' : 'unknown';
+    ? 'owned' : actual.startTime === record.startTime ? 'unknown' : 'gone';
 }
 
 export function isOurAgent(record: AgentRecord, ownerPid?: number): boolean {

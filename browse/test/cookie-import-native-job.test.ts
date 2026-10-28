@@ -999,9 +999,9 @@ function safeNativeEnvelope(output: string): object {
 
 function assertOwnerReceipt(receipt: { available: boolean; owners: { pid: number; creationMatched: boolean; isTestHost: boolean }[] }, pid: number) {
   const before = JSON.stringify(receipt);
-  expect(receipt.available).toBe(true);
-  expect(Array.isArray(receipt.owners)).toBe(true);
-  expect(receipt.owners.some(owner => owner.pid === pid && owner.creationMatched && owner.isTestHost)).toBe(true);
+  expect(receipt.available, before).toBe(true);
+  expect(Array.isArray(receipt.owners), before).toBe(true);
+  expect(receipt.owners.some(owner => owner.pid === pid && owner.creationMatched && owner.isTestHost), before).toBe(true);
   expect(JSON.stringify(receipt)).toBe(before);
 }
 

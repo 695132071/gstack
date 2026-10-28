@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { dlopen, FFIType, ptr } from 'bun:ffi';
 
 const VALIDATOR = path.resolve(import.meta.dir, '../src/path-security.ts');
 const WIN = process.platform === 'win32';
@@ -43,11 +44,16 @@ function validate(tempDir: string, checks: Array<['output' | 'read', string]>): 
 }
 
 function shortPath(dir: string): string {
-  const result = Bun.spawnSync(['powershell', '-NoProfile', '-NonInteractive', '-Command',
-    `(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:GSTACK_LONG_DIR).ShortPath`], {
-    env: { ...process.env, GSTACK_LONG_DIR: dir }, stdout: 'pipe', stderr: 'pipe', timeout: 30_000,
-  });
-  return result.stdout.toString().trim();
+  const kernel = dlopen('kernel32.dll', { GetShortPathNameW: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 } });
+  try {
+    const input = Buffer.from(dir + '\0', 'utf16le');
+    const output = Buffer.alloc(65536);
+    const length = kernel.symbols.GetShortPathNameW(ptr(input), ptr(output), 32768);
+    if (length === 0 || length >= 32768) throw new Error(`GetShortPathNameW failed for ${dir} (returned ${length})`);
+    return output.subarray(0, length * 2).toString('utf16le');
+  } finally {
+    kernel.close();
+  }
 }
 
 describe('#3104 one realpath for safe dirs and targets', () => {

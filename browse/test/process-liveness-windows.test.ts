@@ -4,7 +4,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isProcessAlive } from '../src/error-handling';
-import { spawnTerminalAgent } from '../src/terminal-agent-control';
+import {
+  isAgentRecordGone, isOurAgent, readAgentStartTime, spawnTerminalAgent, stopAgentByRecord, win32CreationTimeSource, writeAgentRecord,
+  type AgentRecord,
+} from '../src/terminal-agent-control';
 
 // REGRESSION TEST for the Windows terminal-agent leak.
 //
@@ -117,8 +120,10 @@ describe('process liveness probe (Windows terminal-agent leak)', () => {
       }
       return originalProbe(command, options);
     }) as typeof Bun.spawnSync);
+    const powershellCalls: string[] = [];
     const windowsProbe = spyOn(childProcess, 'spawnSync').mockImplementation(((command: string, args: string[], options: any) => {
       if (command === 'powershell.exe') {
+        powershellCalls.push(args.join(' '));
         const owner = args.join(' ').includes(`ProcessId = ${process.pid}'`);
         return { status: 0, stdout: JSON.stringify(owner ? { CreationDate: 'fixture-owner-start', CommandLine: 'test-owner' } : null), stderr: '' };
       }
@@ -143,7 +148,14 @@ describe('process liveness probe (Windows terminal-agent leak)', () => {
       // Owner-PID lifetime tie (#2019): the agent polls this and exits when
       // its owning browse server dies, so it can't be adopted by PID 1.
       expect(captured.env.BROWSE_OWNER_PID).toBe(String(process.pid));
-      expect(captured.env.BROWSE_OWNER_START_TIME).toBe('fixture-owner-start');
+      if (process.platform === 'win32') {
+        expect(captured.env.BROWSE_OWNER_START_TIME).toMatch(/^\/Date\(\d+\)\/$/);
+        expect(captured.env.BROWSE_OWNER_START_TIME).toBe(readAgentStartTime(process.pid));
+        expect(powershellCalls.filter(call => call.includes(`ProcessId = ${process.pid}'`))).toEqual([]);
+        expect(powershellCalls.every(call => call.includes("ProcessId = 2147483647'"))).toBe(true);
+      } else {
+        expect(captured.env.BROWSE_OWNER_START_TIME).toBe('fixture-owner-start');
+      }
       // Detached background daemon — must not inherit a terminal either.
       expect(captured.stdio).toEqual(['ignore', 'ignore', 'ignore']);
       await exited;
@@ -172,5 +184,147 @@ describe('process liveness probe (Windows terminal-agent leak)', () => {
     const guardMax = 3;
     const windowMs = Math.max(60_000, tick * (guardMax + 2));
     expect(windowMs).toBeGreaterThanOrEqual(tick * guardMax);
+  });
+});
+
+describe('win32 terminal-agent identity (GSTA-139)', () => {
+  const pid = 2147483645;
+  const gen = 'win32-identity-generation';
+  const birth = '/Date(1761600000123)/';
+  const ownedCommand = `"C:\\bun\\bun.exe" run terminal-agent.ts --agent-gen=${gen}`;
+  const record = (startTime = birth): AgentRecord => ({ pid, gen, startTime, startedAt: 0, ownerPid: pid, ownerStartTime: birth });
+  type PowerShell = { status: number | null; creationDate?: string; commandLine?: string };
+
+  function onWin32(scenario: { ffi: string | undefined; powershell: PowerShell }, run: (calls: { powershell: number; signals: unknown[] }) => void): void {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const calls = { powershell: 0, signals: [] as unknown[] };
+    let live = true;
+    const kill = spyOn(process, 'kill').mockImplementation(((target: number, signal: unknown) => {
+      expect(target).toBe(pid);
+      if (!live) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      if (signal !== 0) { calls.signals.push(signal); live = false; }
+      return true;
+    }) as typeof process.kill);
+    const read = spyOn(win32CreationTimeSource, 'read').mockImplementation((target: number) => (target === pid && live ? scenario.ffi : undefined));
+    const probe = spyOn(childProcess, 'spawnSync').mockImplementation(((command: string) => {
+      expect(command).toBe('powershell.exe');
+      calls.powershell++;
+      const { status, creationDate, commandLine } = scenario.powershell;
+      return status === 0
+        ? { status, stdout: JSON.stringify({ CreationDate: creationDate, CommandLine: commandLine }), stderr: '' }
+        : { status, stdout: '', stderr: '', error: Object.assign(new Error('spawnSync powershell.exe ETIMEDOUT'), { code: 'ETIMEDOUT' }) };
+    }) as typeof childProcess.spawnSync);
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      run(calls);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      probe.mockRestore();
+      read.mockRestore();
+      kill.mockRestore();
+    }
+  }
+
+  test('the start time is read in-process, so a PowerShell launch killed at its timeout cannot empty it', () => {
+    onWin32({ ffi: birth, powershell: { status: null } }, calls => {
+      expect(readAgentStartTime(pid)).toBe(birth);
+      expect(calls.powershell).toBe(0);
+    });
+  });
+
+  test('without the in-process reader (Node daemon) the start time falls back to the PowerShell CreationDate', () => {
+    onWin32({ ffi: undefined, powershell: { status: 0, creationDate: birth, commandLine: ownedCommand } }, calls => {
+      expect(readAgentStartTime(pid)).toBe(birth);
+      expect(calls.powershell).toBe(1);
+    });
+  });
+
+  test('kill-time ownership still requires the generation in the PowerShell command line', () => {
+    onWin32({ ffi: birth, powershell: { status: 0, creationDate: birth, commandLine: ownedCommand } }, calls => {
+      expect(isOurAgent(record())).toBe(true);
+      expect(stopAgentByRecord(record(), 0)).toBe(true);
+      expect(calls.signals).toEqual(['SIGTERM']);
+    });
+    for (const powershell of [{ status: 0, creationDate: birth, commandLine: 'bun run unrelated.ts' }, { status: null }]) {
+      onWin32({ ffi: birth, powershell }, calls => {
+        expect(isOurAgent(record())).toBe(false);
+        expect(isAgentRecordGone(record())).toBe(false);
+        expect(stopAgentByRecord(record(), 0)).toBe(false);
+        expect(calls.signals).toEqual([]);
+      });
+    }
+    onWin32({ ffi: '/Date(1761600000124)/', powershell: { status: 0, creationDate: birth, commandLine: 'bun run unrelated.ts' } }, calls => {
+      expect(isAgentRecordGone(record())).toBe(true);
+      expect(calls.signals).toEqual([]);
+    });
+  });
+
+  test('a start time that disagrees across readers still identifies the live agent by its generation, so no second agent starts', () => {
+    const daemonRecorded = '/Date(1761596400123)/';
+    onWin32({ ffi: birth, powershell: { status: 0, creationDate: daemonRecorded, commandLine: ownedCommand } }, calls => {
+      expect(isAgentRecordGone(record(daemonRecorded))).toBe(false);
+      expect(isOurAgent(record(daemonRecorded))).toBe(true);
+      expect(stopAgentByRecord(record(daemonRecorded), 0)).toBe(true);
+      expect(calls.signals).toEqual(['SIGTERM']);
+    });
+    onWin32({ ffi: birth, powershell: { status: null } }, calls => {
+      expect(isAgentRecordGone(record(daemonRecorded))).toBe(false);
+      expect(stopAgentByRecord(record(daemonRecorded), 0)).toBe(false);
+      expect(calls.signals).toEqual([]);
+    });
+  });
+
+  test('an unreadable start time is unknown: never signalled and never treated as gone', () => {
+    onWin32({ ffi: undefined, powershell: { status: null } }, calls => {
+      expect(readAgentStartTime(pid)).toBe('');
+      expect(isOurAgent(record())).toBe(false);
+      expect(isAgentRecordGone(record())).toBe(false);
+      expect(stopAgentByRecord(record(), 0)).toBe(false);
+      expect(calls.signals).toEqual([]);
+    });
+  });
+
+  test.skipIf(process.platform !== 'win32')('the in-process start time equals the CreationDate earlier releases recorded', () => {
+    const child = Bun.spawn([process.execPath, '-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'ignore', 'ignore'] });
+    try {
+      for (const target of [process.pid, child.pid]) {
+        const script = `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${target}' | Select-Object CreationDate | ConvertTo-Json -Compress)`;
+        const legacy = childProcess.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+        expect(legacy.status).toBe(0);
+        const recorded = JSON.parse(legacy.stdout).CreationDate;
+        expect(recorded).toMatch(/^\/Date\(\d+\)\/$/);
+        expect(win32CreationTimeSource.read(target)).toBe(recorded);
+        expect(readAgentStartTime(target)).toBe(recorded);
+      }
+    } finally {
+      child.kill();
+    }
+  }, 150_000);
+
+  test.skipIf(process.platform !== 'win32')('a live agent whose identity cannot be read blocks a second agent', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-unknown-'));
+    const script = path.join(tmpDir, 'fake-agent.ts');
+    fs.writeFileSync(script, '// no-op\n');
+    const live = Bun.spawn([process.execPath, '-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'ignore', 'ignore'] });
+    writeAgentRecord(tmpDir, { pid: live.pid, gen, startTime: birth, startedAt: 0, ownerPid: process.pid, ownerStartTime: birth });
+    const original = childProcess.spawnSync;
+    const probe = spyOn(childProcess, 'spawnSync').mockImplementation(((command: string, args: string[], options: any) => (
+      command === 'powershell.exe' ? { status: null, stdout: '', stderr: '' } : original(command, args, options)
+    )) as typeof childProcess.spawnSync);
+    const read = spyOn(win32CreationTimeSource, 'read').mockImplementation(() => undefined);
+    const origSpawn = (Bun as any).spawn;
+    let spawned = 0;
+    (Bun as any).spawn = () => { spawned++; throw new Error('a second agent must not start'); };
+    try {
+      expect(spawnTerminalAgent({ stateFile: path.join(tmpDir, 'state.json'), serverPort: 12345, ownerPid: process.pid, cwd: tmpDir, scriptPath: script })).toBeNull();
+      expect(spawned).toBe(0);
+      expect(isProcessAlive(live.pid)).toBe(true);
+    } finally {
+      (Bun as any).spawn = origSpawn;
+      read.mockRestore();
+      probe.mockRestore();
+      live.kill();
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5 });
+    }
   });
 });
