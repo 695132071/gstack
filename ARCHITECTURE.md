@@ -199,7 +199,7 @@ Storage reset and authentication verification are independent opt-ins. `--clear-
 
 ### Shell injection prevention
 
-The browser registry (Chrome, Chromium, Brave, Edge, Windows-only Opera and Opera GX, and macOS-only Comet, Arc, Dia) is hardcoded. Database roots come from known platform locations; profile directory input is validated. Keychain access uses `Bun.spawn()` with explicit argument arrays, not shell string interpolation.
+The browser registry (Chrome, Chromium, Brave, Edge, Windows-only Opera and Opera GX, and macOS-only Comet and Arc) is hardcoded. Database roots come from known platform locations; profile directory input is validated. Keychain access uses `Bun.spawn()` with explicit argument arrays, not shell string interpolation.
 
 ### Egress receipt ledger (v1.63.0.0)
 

@@ -108,10 +108,10 @@ afterEach(() => {
 });
 
 describe('cookie import reliability', () => {
-  test('discovers Dia with only a numbered macOS profile', () => {
-    profile('Library/Application Support/Dia/User Data', 'Profile 2');
-    expect(findInstalledBrowsers().map(browser => browser.name)).toContain('Dia');
-    expect(listProfiles('dia')[0].name).toBe('Profile 2');
+  test('discovers Arc with only a numbered macOS profile', () => {
+    profile('Library/Application Support/Arc/User Data', 'Profile 2');
+    expect(findInstalledBrowsers().map(browser => browser.name)).toContain('Arc');
+    expect(listProfiles('arc')[0].name).toBe('Profile 2');
   });
 
   test('prefers current Local State names and sorts profile numbers naturally', () => {
@@ -213,13 +213,13 @@ describe('cookie import reliability', () => {
   });
 
   test('actual Keychain denial is sanitized, never repeated, and clears its deadline', async () => {
-    const dir = profile('Library/Application Support/Dia/User Data', 'Default');
+    const dir = profile('Library/Application Support/Arc/User Data', 'Default');
     const db = new Database(path.join(dir, 'Cookies'));
     db.run("UPDATE cookies SET value = '', encrypted_value = ?", [Buffer.from('v10synthetic-encrypted-row')]);
     db.close();
     let requests = 0;
     Bun.spawn = ((command: string[]) => {
-      expect(command).toEqual(['security', 'find-generic-password', '-s', 'Dia Safe Storage', '-w']);
+      expect(command).toEqual(['security', 'find-generic-password', '-s', 'Arc Safe Storage', '-w']);
       requests++;
       return { stdout: new Blob([]).stream(), stderr: new Blob(['user canceled synthetic-private-detail']).stream(), exited: Promise.resolve(1), kill() {} };
     }) as typeof Bun.spawn;
@@ -227,7 +227,7 @@ describe('cookie import reliability', () => {
     const clear = spyOn(globalThis, 'clearTimeout').mockImplementation(() => {});
     try {
       let error: any;
-      try { await withCookieReadRetry(() => importCookies('dia', ['example.test'])); } catch (caught) { error = caught; }
+      try { await withCookieReadRetry(() => importCookies('arc', ['example.test'])); } catch (caught) { error = caught; }
       expect(error).toBeInstanceOf(CookieImportError);
       expect(error.code).toBe('keychain_denied');
       expect(error.message).not.toContain('synthetic-private-detail');
@@ -252,7 +252,7 @@ describe('cookie import reliability', () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' });
     expect(listSupportedBrowserNames()).toEqual(['Chrome', 'Chromium', 'Brave', 'Edge', 'Opera', 'Opera GX']);
     Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' });
-    expect(listSupportedBrowserNames()).toEqual(['Comet', 'Chrome', 'Chromium', 'Arc', 'Dia', 'Brave', 'Edge']);
+    expect(listSupportedBrowserNames()).toEqual(['Comet', 'Chrome', 'Chromium', 'Arc', 'Brave', 'Edge']);
     Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' });
     expect(listSupportedBrowserNames()).toEqual(['Chrome', 'Chromium', 'Brave', 'Edge']);
   });
@@ -618,7 +618,7 @@ describe('cookie import reliability', () => {
 
   test('windowsNative matches exactly the browsers the native extractor maps', () => {
     const env = { LOCALAPPDATA: 'C:\\Users\\fixture\\AppData\\Local' };
-    for (const browser of ['Comet', 'Chrome', 'Chromium', 'Arc', 'Dia', 'Brave', 'Edge', 'Opera', 'Opera GX']) {
+    for (const browser of ['Comet', 'Chrome', 'Chromium', 'Arc', 'Brave', 'Edge', 'Opera', 'Opera GX']) {
       let mapped = true;
       try { nativeBrowserPaths(browser, env); } catch { mapped = false; }
       expect(resolveBrowserInfo(browser).windowsNative === true).toBe(mapped);

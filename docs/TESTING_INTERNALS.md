@@ -967,8 +967,8 @@ with `GSTACK_FREE_RETRY_FLAKY=0`.
 A stock Ubuntu 24.04 VM differs from a GitHub-hosted runner in three ways that
 the scripts correct: the login umask is `002` (group-writable directories fail
 the CSO private-state checks), AppArmor blocks the unprivileged user
-namespaces Chromium's sandbox needs, and `clang` and `python3-venv` are absent
-(required by the Dia readiness and Python runner tests).
+namespaces Chromium's sandbox needs, and `python3-venv` is absent (required by
+the Python runner tests).
 
 VMs are named `ubirun-<owner>-<epoch>-<hex>`, plus a `-t<hours>` TTL suffix
 (below); `<owner>` is `UBI_OWNER` (set it to the thread id on a Capy machine;
@@ -1523,10 +1523,10 @@ on win32, drives a POSIX signal path) leaves it through a
 the file moved.
 
 Native qualification campaigns (Windows cookie extraction, Windows launch
-diagnostics, Dia on macOS) run only on dispatch of `native-qualification.yml`:
+diagnostics) run only on dispatch of `native-qualification.yml`:
 
 ```bash
-gh workflow run native-qualification.yml --ref <branch> -f mode=<cookie-native|windows-native-diagnostics|dia-native|dia-launch-comparison|dia-gui-readiness>
+gh workflow run native-qualification.yml --ref <branch> -f mode=<cookie-native|windows-native-diagnostics>
 ```
 
 ### Real-setup install fixture

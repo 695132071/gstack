@@ -149,7 +149,7 @@ describe('native-cookie production admission', () => {
   });
 
   test('does not substitute a different browser for an unsupported identity', () => {
-    expect(adapter({ ...options, browserName: 'Dia' })).toMatchObject({ code: 'not_supported', typed: true });
+    expect(adapter({ ...options, browserName: 'Arc' })).toMatchObject({ code: 'not_supported', typed: true });
   });
 
   test('rejects mismatched and copied profile roots', () => {

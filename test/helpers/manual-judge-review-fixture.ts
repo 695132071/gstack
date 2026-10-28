@@ -10,7 +10,7 @@ import { COOKIE_MANUAL_REVIEW_FILE } from './cookie-workflow-manual-review';
 // exact historical prompt bytes, including the section's line range.
 const LATER_BROWSER_BLOCK = /\*\*Windows: Opera and Opera GX\.\*\*[\s\S]*?appear in CLI output\.\n\n/;
 const LATER_BROWSER_EDITS: Array<[string, string]> = [
-  ['The picker recognizes Chrome, Chromium, Brave, Edge, Windows-only Opera and Opera GX, and macOS-only Comet, Arc, and Dia.', 'The picker recognizes Chrome, Chromium, Brave, Edge, and macOS-only Comet, Arc, and Dia.'],
+  ['The picker recognizes Chrome, Chromium, Brave, Edge, Windows-only Opera and Opera GX, and macOS-only Comet and Arc.', 'The picker recognizes Chrome, Chromium, Brave, Edge, and macOS-only Comet, Arc, and Dia.'],
   [' Opera and Opera GX are Windows-only and read from `%APPDATA%\\Opera Software\\Opera Stable` or `Opera GX Stable`, in `Default` or `Profile N` directories; legacy root-level layouts, Opera side profiles and portable or relocated installs are not detected. Opera has no native extraction, so its App-Bound cookies (if any) need manual sign-in.', ''],
 ];
 
@@ -35,6 +35,8 @@ const LATER_WAVE_EDITS: Array<[string, string]> = [
     "The skill-start output above already ran artifacts sync. Act on its lines:\nGBrain hint text (if present) tells you when to prefer `gbrain` over Grep;\n`ARTIFACTS_SYNC:` reports sync health (`off`, `mode=... | queue=N`,\n`remote-mode`, or a restore hint naming `gstack-brain-restore`).\n\nThe one-time privacy stop-gate (artifacts-sync consent) arrives as a\n`GSTACK_INSTRUCTION` block from skill-start when consent is actually pending\n\u2014 fire it via AskUserQuestion exactly as the block instructs."],
   // Oct 8 wave: the tier-1 voice directive gained the reply-language rule (two lines longer).
   ["Reply in the language of the user's latest message unless asked otherwise. Code, commands, paths, identifiers and quoted output stay verbatim.\n\n", ''],
+  // Dia removal (GSTA-143) dropped its platform sentence; same line count.
+  ["\nKeychain approval is the user's choice.", "\nDia is macOS-only. Keychain approval is the user's choice."],
   // #3129 dropped the Claude body's "When to invoke" section above the preamble (seven lines shorter).
   ['<!-- Regenerate: bun run gen:skill-docs -->\n\n## Preamble (run first)\n', '<!-- Regenerate: bun run gen:skill-docs -->\n\n\n## When to invoke this skill\n\nOpens an interactive picker UI where you select which cookie domains to import.\nUse before QA testing authenticated pages. Use when asked to "import cookies",\n"login to the site", or "authenticate the browser".\n\n## Preamble (run first)\n'],
 ];

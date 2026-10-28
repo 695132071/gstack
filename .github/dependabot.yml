@@ -14,7 +14,7 @@ updates:
     # The windowsHide patch (package.json patchedDependencies, #2160/#1989) is
     # keyed to one playwright-core version; a minor or major bump drops it and
     # brings back Windows console flashes. Patch updates still flow. The 1.64
-    # migration (re-key the patch, the Dia/cookie qualification pins, the
+    # migration (re-key the patch, the cookie qualification pins, the
     # arm64 artifact name) is owned by Garry, revisit 2026-11-15 (#2923).
     ignore:
       - dependency-name: "playwright"

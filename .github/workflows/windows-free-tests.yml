@@ -18,7 +18,7 @@ name: Windows Free Tests
 # the artifact.
 #
 # Native browser qualification campaigns (Windows cookie extraction, launch
-# diagnostics, Dia on macOS) are dispatch-only in native-qualification.yml.
+# diagnostics) are dispatch-only in native-qualification.yml.
 
 on:
   pull_request:

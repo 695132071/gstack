@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.91.298.0] - 2026-10-28
+
+**Dia is gone from gstack.** `/setup-browser-cookies` and `cookie-import-browser` no longer list Dia as a cookie source, and the Dia qualification harness is deleted. That harness was a set of macOS campaigns that never qualified a native import, and its `dia-launch-comparison` free test was failing the merge train on Ubicloud runners. Cookie import from Comet, Chrome, Chromium, Arc, Brave, Edge, Opera and Opera GX is unchanged.
+
+### Removed
+- **Dia as a cookie source**: the registry entry, the `dia` alias, and every Dia mention in the `cookie-import-browser` description, the browse and setup-browser-cookies skills, `gstack/llms.txt`, README, BROWSER.md, ARCHITECTURE.md, CONTRIBUTING.md, docs/skills.md and docs/TESTING_INTERNALS.md.
+- The `dia-native`, `dia-launch-comparison` and `dia-gui-readiness` modes are gone from `native-qualification.yml`, along with their job, the four `.github/scripts` files behind them, and their three `browse/test` files. Those tests also leave the free-test duration seed and the test typecheck baseline.
+- **`clang` on the Ubicloud free-suite VM**: only the Dia GUI readiness test compiled C on Linux.
+
+### Tests
+- The cookie tests that used Dia as their macOS fixture browser now use Arc, which has the same `User Data` layout and Keychain shape: numbered-profile discovery, Keychain denial, the credential deadline, the Node bundle import and the picker UI. The historical cookie-workflow approval fixture adds one reverse edit so it still rebuilds the approved prompt byte for byte. No threshold or allowlist changed.
+
 ## [1.91.297.0] - 2026-10-28
 
 **The terminal agent on Windows no longer waits on PowerShell to learn its own start time, so it boots in about a second and a slow PowerShell can no longer leave it without an identity.** Every agent boot ran `powershell.exe Get-CimInstance` with a 2 s timeout, twice when started standalone. On a loaded `windows-latest` runner one launch took 0.94 s at the median and up to 10.8 s, so agent boot took 2.4 to 2.8 s at the median and 5.1 s on a runner's first boot, past the owner-watchdog test's 5 s window. Measured again after the change under the same load: 0.86 to 0.91 s at the median, 1.18 s at most, 120 of 120 boots inside the window.

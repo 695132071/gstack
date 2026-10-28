@@ -51,10 +51,10 @@ describe('rendered cookie picker', () => {
     requests = [];
     imported = [];
     handler = () => undefined;
-    browsers = [{ name: 'Chrome', aliases: ['chrome', 'google-chrome', 'google-chrome-stable'] }, { name: 'Dia', aliases: ['dia'] }];
+    browsers = [{ name: 'Chrome', aliases: ['chrome', 'google-chrome', 'google-chrome-stable'] }, { name: 'Arc', aliases: ['arc'] }];
     profiles = {
       Chrome: { profiles: [{ name: 'Default', displayName: 'Personal' }, { name: 'Profile 1', displayName: 'Personal' }], recommendedProfile: 'Default' },
-      Dia: { profiles: [{ name: 'Profile 1', displayName: 'Work' }, { name: 'Profile 2', displayName: 'Work' }], recommendedProfile: 'Profile 2' },
+      Arc: { profiles: [{ name: 'Profile 1', displayName: 'Work' }, { name: 'Profile 2', displayName: 'Work' }], recommendedProfile: 'Profile 2' },
     };
     errors = [];
     context = await browser.newContext();
@@ -200,8 +200,8 @@ describe('rendered cookie picker', () => {
     await openPicker();
     await page.getByRole('button', { name: 'Import .chrome-profile-1.test', exact: true }).waitFor();
     expect(await page.locator('.profile-pill.active').getAttribute('data-profile')).toBe('Profile 1');
-    await page.getByRole('button', { name: 'Dia', exact: true }).click();
-    await page.getByRole('button', { name: 'Import .dia-profile-2.test', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Arc', exact: true }).click();
+    await page.getByRole('button', { name: 'Import .arc-profile-2.test', exact: true }).waitFor();
     expect(await page.locator('.profile-pill.active').getAttribute('data-profile')).toBe('Profile 2');
   });
 
@@ -211,12 +211,12 @@ describe('rendered cookie picker', () => {
     await page.getByRole('button', { name: 'Import .chrome-profile-1.test', exact: true }).waitFor();
     expect(await page.locator('.pill.active').textContent()).toBe('Chrome');
     expect(await page.locator('.profile-pill.active').getAttribute('data-profile')).toBe('Profile 1');
-    await page.getByRole('button', { name: 'Dia', exact: true }).click();
-    await page.getByRole('button', { name: 'Import .dia-profile-2.test', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Arc', exact: true }).click();
+    await page.getByRole('button', { name: 'Import .arc-profile-2.test', exact: true }).waitFor();
     expect(await page.locator('.profile-pill.active').getAttribute('data-profile')).toBe('Profile 2');
     await page.getByRole('button', { name: 'Chrome', exact: true }).click();
     await page.getByRole('button', { name: 'Import .chrome-profile-1.test', exact: true }).waitFor();
-    expect(requests.filter(request => request.path === '/profiles').map(request => request.browser)).toEqual(['Chrome', 'Dia', 'Chrome']);
+    expect(requests.filter(request => request.path === '/profiles').map(request => request.browser)).toEqual(['Chrome', 'Arc', 'Chrome']);
   });
 
   test('does not interpret a browser alias substring as an installed browser', async () => {
@@ -241,34 +241,34 @@ describe('rendered cookie picker', () => {
   for (const earlierFirst of [true, false]) {
     test(`ignores stale profile responses when the earlier request returns ${earlierFirst ? 'first' : 'last'}`, async () => {
       const chrome = Promise.withResolvers<Response>();
-      const dia = Promise.withResolvers<Response>();
+      const arc = Promise.withResolvers<Response>();
       const chromeSeen = Promise.withResolvers<void>();
-      const diaSeen = Promise.withResolvers<void>();
+      const arcSeen = Promise.withResolvers<void>();
       handler = request => {
         if (request.path !== '/profiles') return;
         if (request.browser === 'Chrome') { chromeSeen.resolve(); return chrome.promise; }
-        diaSeen.resolve(); return dia.promise;
+        arcSeen.resolve(); return arc.promise;
       };
       await openPicker();
       await chromeSeen.promise;
-      await page.getByRole('button', { name: 'Dia', exact: true }).click();
-      await diaSeen.promise;
+      await page.getByRole('button', { name: 'Arc', exact: true }).click();
+      await arcSeen.promise;
       if (earlierFirst) {
         const response = page.waitForResponse(response => response.url().includes('/profiles?browser=Chrome'));
         chrome.resolve(Response.json(profiles.Chrome));
         await response;
         expect(await page.locator('.profile-pill.active').count()).toBe(0);
       }
-      dia.resolve(Response.json(profiles.Dia));
-      await page.getByRole('button', { name: 'Import .dia-profile-2.test', exact: true }).waitFor();
+      arc.resolve(Response.json(profiles.Arc));
+      await page.getByRole('button', { name: 'Import .arc-profile-2.test', exact: true }).waitFor();
       if (!earlierFirst) {
         const response = page.waitForResponse(response => response.url().includes('/profiles?browser=Chrome'));
         chrome.resolve(Response.json(profiles.Chrome));
         await response;
       }
-      expect(await page.locator('.pill.active').textContent()).toBe('Dia');
+      expect(await page.locator('.pill.active').textContent()).toBe('Arc');
       expect(await page.locator('.profile-pill.active').getAttribute('data-profile')).toBe('Profile 2');
-      expect(requests.filter(request => request.path === '/domains').map(request => request.browser)).toEqual(['Dia']);
+      expect(requests.filter(request => request.path === '/domains').map(request => request.browser)).toEqual(['Arc']);
     });
   }
 
@@ -347,16 +347,16 @@ describe('rendered cookie picker', () => {
     const add = page.getByRole('button', { name: 'Import .chrome-default.test', exact: true });
     await add.evaluate((element: HTMLButtonElement) => { element.click(); element.click(); });
     await seen.promise;
-    expect(await page.getByRole('button', { name: 'Dia', exact: true }).isDisabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Arc', exact: true }).isDisabled()).toBe(true);
     expect(await page.getByRole('button', { name: 'Personal (Profile 1)', exact: true }).isDisabled()).toBe(true);
     for (const selector of ['#btn-import-all', '#clear-storage', '#verify-auth', '#search', '.btn-trash']) expect(await page.locator(selector).isDisabled()).toBe(true);
     await page.locator('#btn-import-all').evaluate((element: HTMLButtonElement) => element.click());
-    await page.getByRole('button', { name: 'Dia', exact: true }).evaluate((element: HTMLButtonElement) => element.click());
+    await page.getByRole('button', { name: 'Arc', exact: true }).evaluate((element: HTMLButtonElement) => element.click());
     expect(requests.filter(request => request.path === '/import')).toHaveLength(1);
     result.resolve(Response.json({ imported: 1, failed: 0, domainCounts: { '.chrome-default.test': 1 }, outcome: 'imported', reset: 'not_requested', verification: { verified: false, reason: 'not_requested' } }));
     await page.getByRole('status').filter({ hasText: 'Cookies imported.' }).waitFor();
     expect(await page.locator('.pill.active').textContent()).toBe('Chrome');
-    expect(await page.getByRole('button', { name: 'Dia', exact: true }).isEnabled()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Arc', exact: true }).isEnabled()).toBe(true);
     expect(requests.filter(request => request.path === '/import')).toHaveLength(1);
   });
 

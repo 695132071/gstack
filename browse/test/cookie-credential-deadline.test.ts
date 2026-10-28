@@ -14,7 +14,7 @@ let platform: PropertyDescriptor;
 let spawn: typeof Bun.spawn;
 
 function fixture(encrypted: Buffer, hostPlatform: 'darwin' | 'linux' | 'win32' = 'darwin') {
-  const folder = hostPlatform === 'darwin' ? 'Library/Application Support/Dia/User Data/Default'
+  const folder = hostPlatform === 'darwin' ? 'Library/Application Support/Arc/User Data/Default'
     : hostPlatform === 'linux' ? '.config/chromium/Default' : 'AppData/Local/Chromium/User Data/Default';
   const dir = path.join(home, folder);
   fs.mkdirSync(dir, { recursive: true });
@@ -72,7 +72,7 @@ describe('credential subprocess whole-operation deadline', () => {
       let expire: (() => void) | undefined;
       const timer = spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => { expire = callback; return 19 as any; });
       try {
-        const result = importCookies('dia', ['fixture.test']);
+        const result = importCookies('arc', ['fixture.test']);
         expect(expire).toBeFunction();
         expire!();
         await expect(result).rejects.toMatchObject({ code: 'keychain_timeout', action: 'retry' });
@@ -94,7 +94,7 @@ describe('credential subprocess whole-operation deadline', () => {
     let expire: (() => void) | undefined;
     const timer = spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => { expire = callback; return 20 as any; });
     try {
-      const result = importCookies('dia', ['fixture.test']);
+      const result = importCookies('arc', ['fixture.test']);
       expect(expire).toBeFunction();
       expire!();
       await expect(result).rejects.toMatchObject({ code: 'keychain_timeout' });
@@ -114,7 +114,7 @@ describe('credential subprocess whole-operation deadline', () => {
     Bun.spawn = (() => ({ exited: Promise.resolve(0), stdout: new Blob([privateValue.repeat(4_000)]).stream(),
       stderr: new Blob([]).stream(), kill() { killed++; } })) as typeof Bun.spawn;
     let error: any;
-    try { await importCookies('dia', ['fixture.test']); } catch (caught) { error = caught; }
+    try { await importCookies('arc', ['fixture.test']); } catch (caught) { error = caught; }
     expect(error).toBeInstanceOf(CookieImportError);
     expect(error.code).toBe('keychain_error');
     expect(error.message).not.toContain(privateValue);
@@ -127,8 +127,8 @@ describe('credential subprocess whole-operation deadline', () => {
     for (const [code, stderr, expected] of [[0, '', 'fixture-value'], [1, 'user canceled private-detail', 'keychain_denied'], [1, 'could not be found private-detail', 'keychain_not_found']] as const) {
       Bun.spawn = (() => ({ exited: Promise.resolve(code), stdout: new Blob([code ? '' : 'fixture-password\n']).stream(),
         stderr: new Blob([stderr]).stream(), kill() { throw new Error('Unexpected kill'); } })) as typeof Bun.spawn;
-      if (!code) expect((await importCookies('dia', ['fixture.test'])).cookies[0].value).toBe(expected);
-      else await expect(importCookies('dia', ['fixture.test'])).rejects.toMatchObject({ code: expected });
+      if (!code) expect((await importCookies('arc', ['fixture.test'])).cookies[0].value).toBe(expected);
+      else await expect(importCookies('arc', ['fixture.test'])).rejects.toMatchObject({ code: expected });
     }
   });
 
@@ -198,7 +198,7 @@ describe('credential subprocess whole-operation deadline', () => {
     const polyfill = path.resolve(import.meta.dir, '../src/bun-polyfill.cjs');
     const nodeFixture = path.join(home, 'node-fixture');
     fs.mkdirSync(nodeFixture);
-    const dir = path.join(nodeFixture, 'Library/Application Support/Dia/User Data/Default');
+    const dir = path.join(nodeFixture, 'Library/Application Support/Arc/User Data/Default');
     fs.mkdirSync(dir, { recursive: true });
     expect(fs.realpathSync(dir).startsWith(fs.realpathSync(nodeFixture) + path.sep)).toBe(true);
     const db = new Database(path.join(dir, 'Cookies'));
@@ -213,7 +213,7 @@ describe('credential subprocess whole-operation deadline', () => {
       Bun.spawn = (_command, options) => original([process.execPath, '-e', 'console.log("fixture-node-password")'], options);
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       const { importCookies } = await import(process.argv[2]);
-      const result = await importCookies('dia', ['fixture.test']);
+      const result = await importCookies('arc', ['fixture.test']);
       console.log(JSON.stringify({ count: result.count, value: result.cookies[0]?.value }));
     `, polyfill, pathToFileURL(bundle).href], { encoding: 'utf8', timeout: 15_000,
       env: { ...process.env, HOME: nodeFixture, USERPROFILE: nodeFixture, NODE_NO_WARNINGS: '1' } });
