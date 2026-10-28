@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.91.299.0] - 2026-10-28
+
+**The Captain brief now says what `rec` does when a gate carries earlier decisions.** At a gate after the owner already answered some items, such as a round-cap gate, `gstack-owner-brief render --captain` listed each item's recommendation ("keep the plan as written", `rec resolves to d2a`) while `gstack-gate render` and `gstack-autoplan answer --reply rec` keep the carried answer (`d2b`). A Captain relaying the brief told the owner the opposite of what their one-word reply would record (#3546). The brief now takes its choices from the same resolver `gstack-gate render` uses.
+
+### Fixed
+- **Carried choices in the Captain brief**: each choice under "What we need from you", the header, the change-something example and the relaying agent's `rec resolves to` line use the `rec` resolution from `parseReply`, given the answers already recorded at this gate the way `gstack-autoplan answer` reads them. A carried item shows the owner's earlier answer marked `(your answer at gate_rev N, carried forward)`, an item answered earlier at this gate is marked `(your answer at this gate)`, and the header says how many answers `rec` keeps.
+
+### Tests
+- `test/captain-brief.test.ts` drives a fixture autoplan run to a round-cap gate with three carried decisions, renders `gstack-gate render` and `gstack-owner-brief render --captain` for it, and asserts the same `rec` resolution and choice labels. A second case records a partial answer at that gate and checks the brief's `rec` against what `gstack-autoplan answer --reply rec` then records. The negative control strips the carried decisions and expects both renders to fall back to the recommendations.
+
 ## [1.91.298.0] - 2026-10-28
 
 **Dia is gone from gstack.** `/setup-browser-cookies` and `cookie-import-browser` no longer list Dia as a cookie source, and the Dia qualification harness is deleted. That harness was a set of macOS campaigns that never qualified a native import, and its `dia-launch-comparison` free test was failing the merge train on Ubicloud runners. Cookie import from Comet, Chrome, Chromium, Arc, Brave, Edge, Opera and Opera GX is unchanged.

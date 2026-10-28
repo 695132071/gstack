@@ -4,7 +4,7 @@
  * every choice rec takes shown in words, gate ids only on the agent line, the
  * rec_hash binding, and the incomplete and answered states.
  */
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -13,6 +13,8 @@ import { capyRelayLine, renderCaptainBrief } from '../lib/captain-brief';
 import { parseReply, recHash, type GateList } from '../lib/gate-list';
 import { findSection, headings } from '../lib/markdown-sections';
 import { loadBriefInputs } from '../lib/owner-brief';
+import { capyRunner, phaseVia, readRunJson, writePlan } from './helpers/autoplan-capy';
+import { SMALL_PLAN } from './helpers/autoplan-run-fixture';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const dirs: string[] = [];
@@ -149,5 +151,91 @@ describe('gstack-owner-brief render --captain', () => {
   test('the Capy relay line appears only under GSTACK_CAPY=1', () => {
     expect(capyRelayLine('/r', { GSTACK_CAPY: '1' })).toStartWith('RELAY: gstack-owner-brief render --captain --out /r ');
     expect(capyRelayLine('/r', {})).toBeUndefined();
+  });
+});
+
+describe('carried decisions at a cap gate (#3546)', () => {
+  const r = capyRunner();
+  afterAll(() => r.cleanup());
+  const SECTIONS = '\n## Before → after\n\nBefore: retries hammer. After: they back off.\n\n## Why it matters\n\nOutages.\n\n## What caused this work\n\nIncident 7.\n\n## Big decisions\n\n1. Exponential backoff.\n';
+  const PLAN = SMALL_PLAN + SECTIONS;
+  const WORDS: Record<string, string> = { 'keep your direction': 'keep the plan as written', 'accept the change': "make the reviewer's change" };
+
+  function cappedRun(): string {
+    const dir = path.join(r.host.base, 'carried');
+    const plan = writePlan(dir, PLAN);
+    const out = path.join(dir, 'run');
+    expect(r.ap(['next', '--out', out, '--plan', plan, '--no-ui', '--max-rounds', '1']).status).toBe(0);
+    const challenge = (title: string) => ({ severity: 'Medium', title, fix: `change: ${title}`, user_challenge: true, changes: 'scope' });
+    phaseVia(r, out, 'ceo', { native: [challenge('Use a queue table'), challenge('Add metrics')], outside: [challenge('Drop jitter')] });
+    phaseVia(r, out, 'eng', { native: [], outside: [] });
+    const ds = JSON.parse(fs.readFileSync(path.join(out, 'gate.json'), 'utf8')).items.filter((i: any) => i.id.startsWith('d'));
+    expect(ds.map((i: any) => i.recommended)).toEqual(['a', 'a', 'a']);
+    expect(r.ap(['answer', '--by', 'human', '--out', out, '--gate-rev', '1', '--reply', `${ds.map((i: any) => `${i.id}b`).join(' ')} p1b`]).status).toBe(0);
+    const v2 = path.join(dir, 'plan-v2.md');
+    fs.writeFileSync(v2, PLAN.replace('cap 30 s', 'cap 60 s, dead-letter after 8 attempts'));
+    const rev = r.ap(['revise', '--out', out, '--plan', v2, '--incorporates', readRunJson(out).amendments.map((a: any) => a.decision).join(',')]);
+    expect(rev.stdout).toMatch(/^REVISED: plan=[0-9a-f]{12} reopened=none capped=ceo,eng$/m);
+    return out;
+  }
+  const cli = (bin: string, args: string[]) => spawnSync('bun', [path.join(ROOT, 'bin', bin), ...args], { encoding: 'utf8', timeout: 60_000 }).stdout ?? '';
+  function renders(out: string) {
+    const gate = JSON.parse(fs.readFileSync(path.join(out, 'gate.json'), 'utf8')) as GateList;
+    const gateText = cli('gstack-gate', ['render', path.join(out, 'gate.json'), '--all']);
+    const briefText = cli('gstack-owner-brief', ['render', '--captain', '--out', out]);
+    const gateRec = JSON.parse(/\`rec\` resolves to: (\{.*\})$/m.exec(gateText)![1]!).choices as Record<string, string>;
+    const briefRec = Object.fromEntries(/rec resolves to ([a-z0-9 ]+);/.exec(briefText)![1]!.split(' ').map(t => [t.slice(0, -1), t.slice(-1)]));
+    return { gate, gateText, briefText, gateRec, briefRec };
+  }
+  let out = '';
+  beforeAll(() => { out = cappedRun(); });
+
+  test('the Captain brief resolves rec to the carried choices, as gstack-gate render does, with the same choice labels', () => {
+    const { gate, gateText, briefText, gateRec, briefRec } = renders(out);
+    expect(gate.gate_rev).toBe(2);
+    expect(gate.items.some(i => i.cap?.kind === 'delta')).toBe(true);
+    const carried = gate.items.filter(i => i.carried);
+    expect(carried.map(i => [i.recommended, i.carried!.chosen])).toEqual([['a', 'b'], ['a', 'b'], ['a', 'b']]);
+    expect(briefRec).toEqual(gateRec);
+    expect(Object.fromEntries(carried.map(i => [i.id, gateRec[i.id]]))).toEqual({ d1: 'b', d2: 'b', d3: 'b' });
+    gate.items.filter(i => i.id !== 'p1').forEach((item, n) => {
+      const text = item.options.find(o => o.key === gateRec[item.id])!.text;
+      expect(gateText).toContain(`   ${item.id}${gateRec[item.id]}) ${text}`);
+      expect(briefText).toContain(`  ${n + 1}. ${item.title.replace(/\s*\[[^\]]*\]\s*$/, '')}: ${WORDS[text] ?? text}`);
+    });
+    expect(briefText).toContain("Use a queue table: make the reviewer's change (your answer at gate_rev 1, carried forward).");
+    expect(briefText).toContain('rec keeps the 3 you already answered and takes the recommended answer for the rest.');
+    expect(briefText).toContain('Reply **rec** to keep the answers you already gave and take every other recommendation (recommended)');
+  });
+
+  test('an answer already given at this gate is what rec keeps, as gstack-autoplan answer --reply rec records it', () => {
+    const copy = path.join(r.host.base, 'prior');
+    fs.cpSync(out, copy, { recursive: true });
+    const partial = r.ap(['answer', '--by', 'human', '--out', copy, '--gate-rev', '2', '--reply', 'd2a']);
+    expect(partial.stdout).toMatch(/^GATE_PENDING: /m);
+    const { briefText, briefRec } = renders(copy);
+    expect(briefRec).toMatchObject({ d1: 'b', d2: 'a', d3: 'b' });
+    expect(briefText).toContain('Add metrics: keep the plan as written (a reviewer suggested changing it) (your answer at this gate).');
+    const answered = r.ap(['answer', '--by', 'human', '--out', copy, '--gate-rev', '2', '--reply', 'rec']);
+    expect(answered.stdout).toMatch(/^APPROVED: gate_rev=2/m);
+    const recorded = fs.readFileSync(path.join(copy, 'decisions.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(d => d.gate_rev === 2);
+    expect(Object.fromEntries(recorded.map(d => [d.label.toLowerCase(), d.chosen]))).toEqual(briefRec);
+  });
+
+  test('negative control: without carried decisions (gate items and their decision rows) both resolve rec to the recommendations', () => {
+    const copy = path.join(r.host.base, 'uncarried');
+    fs.cpSync(out, copy, { recursive: true });
+    const gate = JSON.parse(fs.readFileSync(path.join(copy, 'gate.json'), 'utf8')) as GateList;
+    expect(Object.fromEntries(gate.items.map(i => [i.id, i.recommended]))).not.toEqual(renders(out).gateRec);
+    for (const item of gate.items) delete item.carried;
+    fs.writeFileSync(path.join(copy, 'gate.json'), JSON.stringify(gate));
+    const rows = fs.readFileSync(path.join(copy, 'decisions.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+    fs.writeFileSync(path.join(copy, 'decisions.jsonl'), rows.map(d => JSON.stringify(d.carried_from ? { ...d, status: 'pending', chosen: undefined, answered_at: undefined, reply: undefined, carried_from: undefined } : d)).join('\n') + '\n');
+    const { briefText, gateRec, briefRec } = renders(copy);
+    expect(briefRec).toEqual(gateRec);
+    expect(gateRec).toEqual(Object.fromEntries(gate.items.map(i => [i.id, i.recommended])));
+    expect(briefText).toContain('Use a queue table: keep the plan as written (a reviewer suggested changing it).');
+    expect(briefText).not.toContain('carried forward');
+    expect(briefText).toContain('rec takes the recommended answer for each.');
   });
 });
