@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.91.295.0] - 2026-10-28
+
+**Deleting or renaming a test no longer fails pregate with PREGATE_NO_LANE.** A PR that removed a test file, or renamed one, failed `lanes` because the removed path had no test lane of its own, so cleanup PRs needed a hand-written `dependencies` entry to pass (#3529). Pregate now accounts for a removed test the way it accounts for an edit. A renamed test runs under its new name, a deleted test runs the remaining tests of the files it exercised, and either one runs the tests of any file that still names it, such as a curation list. Every waived test is printed on its own line, so the reason is visible in the gate output. Removing any other file still needs a lane, as before.
+
+### Fixed
+- **Deleted and renamed tests pass `lanes`**: each removed JS, TS, Python, Dart or bats test that nothing remaining imports prints `removed (no lane owed): <path> — <why>`, and the `lanes` detail counts `N removed path(s)`. A deleted test (or a test renamed to a non-test path) runs its owning suite, the remaining tests that directly exercise the files its merge-base text exercised (`owning suite runs: …`); test helpers and fixtures are not subjects. Any removed test also runs the tests of each remaining non-Markdown file that still names it (`files naming it run: …`), and fails closed when that file has no test.
+- **Lost coverage is named, not hidden**: when a deleted test was the last test of a file, the line says `coverage removed: <file> has no remaining test` and the detail adds `M subject(s) lost their last test`. A modified file whose only test the branch deleted still fails PREGATE_NO_LANE.
+
+### Changed
+- Only removed tests are waived. These still fail PREGATE_NO_LANE until a test or a `dependencies` entry covers them. They are any removed non-test path (a renamed source file's old name included), a removed test that remaining code imports, a deleted or renamed Go or Ruby test (it may define helpers its package still uses), and a deleted test whose merge-base text cannot be read (a symlink, invalid UTF-8, over 1 MiB). A remaining test that reads a deleted file or directory is still selected.
+
+### Gate integrity
+- New `test/pregate-removed-paths.test.ts` (47 cases) covers the waived tests and the fail-closed negative controls; no existing test, threshold or allowlist changed.
+
 ## [1.91.294.0] - 2026-10-28
 
 **`gstack-doctor` and setup's hook check start far fewer processes, so the doctor tests fit the Windows CI lane again.** On Windows Git Bash each process start costs 12 to 77 ms, and the doctor spent most of its time starting them: about 3.3 s per `--check` and 6 s per dashboard run. `windows-free-shard (1)` was red on main because `test/gstack-doctor.test.ts` took 553 to 647 s there. Every doctor row, fix line and JSON field prints the same as before.

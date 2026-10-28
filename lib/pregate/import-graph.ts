@@ -43,6 +43,8 @@ export interface Graph {
   unresolved?: Map<string, string[]>;
   /** tsconfig/jsconfig `extends` hops that were not followed (for the no-lane explanation). */
   aliasNotes?: string[];
+  /** Removed test → the files still in the tree its merge-base text exercised (never tests, helpers or fixtures); only for `goneSources`. */
+  goneSubjects?: Map<string, string[]>;
 }
 
 const scanner = new Bun.Transpiler({ loader: 'tsx' });
@@ -442,23 +444,41 @@ export function referencesIn(files: Set<string>, dirs: Set<string>, rel: string,
   return out;
 }
 
+const TEST_TREE = /(?:^|\/)(?:test|tests|spec|__tests__)\//;
+
 /** Test-tree files (tests, helpers, fixtures), bin/ entrypoints and shell sources carry literal dependencies. */
 export function scansLiterals(rel: string): boolean {
-  return /(?:^|\/)(?:test|tests|spec|__tests__)\//.test(rel) || isTestFile(rel) || rel.startsWith('bin/') || /\.(?:sh|bash)$/.test(rel);
+  return TEST_TREE.test(rel) || isTestFile(rel) || rel.startsWith('bin/') || /\.(?:sh|bash)$/.test(rel);
+}
+
+/** The bin/ entrypoints a `test/<name>.test.*` file names by convention: test/gstack-ship-receipt-census.test.ts names bin/gstack-ship-receipt-census, then bin/gstack-ship-receipt, then bin/gstack-ship, … */
+function conventionBins(test: string, files: Set<string>): string[] {
+  const m = /^(?:[\w.-]+\/)*?test\/([\w-]+)\.(?:test|spec)\./.exec(test);
+  if (!m) return [];
+  const parts = m[1]!.split('-');
+  const out: string[] = [];
+  for (let n = parts.length; n >= 1; n--) {
+    const name = parts.slice(0, n).join('-');
+    for (const bin of [`bin/${name}`, `bin/gstack-${name}`, `bin/${name}.ts`, `bin/gstack-${name}.ts`]) if (files.has(bin)) out.push(bin);
+  }
+  return out;
 }
 
 export interface BuildOptions {
   declarations?: Record<string, string[]>; maxBytes?: number;
-  /** Paths that no longer exist (deleted or renamed-from) but that tests may still name; they resolve as dependencies so their consumers are found. */
+  /** Paths that no longer exist (deleted or renamed-from) but that tests may still name; they resolve as dependencies so their consumers are found, and are never tests themselves (`git ls-files` still lists an unstaged deletion). */
   extraFiles?: string[];
+  /** Merge-base text of removed test files; their forward edges to files still in the tree become `goneSubjects`. */
+  goneSources?: Map<string, string>;
 }
 
 /** The whole-repo reverse graph. Files over maxBytes (default 2 MiB) are skipped: generated bundles, not tests. */
 export function buildGraph(repoRoot: string, opts: BuildOptions = {}): Graph {
-  const all = listRepoFiles(repoRoot);
-  const files = new Set([...all, ...(opts.extraFiles ?? [])]);
+  const gone = new Set(opts.extraFiles ?? []);
+  const all = listRepoFiles(repoRoot).filter(f => !gone.has(f));
+  const files = new Set([...all, ...gone]);
   const dirs = new Set<string>();
-  for (const f of all) { let d = path.posix.dirname(f); while (d && d !== '.') { dirs.add(d); d = path.posix.dirname(d); } }
+  for (const f of files) { let d = path.posix.dirname(f); while (d && d !== '.') { dirs.add(d); d = path.posix.dirname(d); } }
   const config = readPathAliases(repoRoot);
   const graph: Graph = { files, tests: new Set(all.filter(isTestFile)), reverse: new Map(), unresolved: new Map(), aliasNotes: config.notes };
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
@@ -478,14 +498,13 @@ export function buildGraph(repoRoot: string, opts: BuildOptions = {}): Graph {
   for (const e of rust.edges) addEdge(graph, e.dependency, e.dependent, e.via);
   const django = djangoEdges({ files: [...files], tests: graph.tests, read: rel => pySources.get(rel) ?? readRepoFile(repoRoot, rel, maxBytes), code: pythonCode, resolveDotted: dotted => pythonPatchTarget(files, dotted) });
   for (const e of django) addEdge(graph, e.dependency, e.dependent, 'framework');
-  for (const test of graph.tests) {
-    const m = /^(?:[\w.-]+\/)*?test\/([\w-]+)\.(?:test|spec)\./.exec(test);
-    if (!m) continue;
-    // test/gstack-ship-receipt-census.test.ts names bin/gstack-ship-receipt-census, then bin/gstack-ship-receipt, then bin/gstack-ship, …
-    const parts = m[1]!.split('-');
-    for (let n = parts.length; n >= 1; n--) {
-      const name = parts.slice(0, n).join('-');
-      for (const bin of [`bin/${name}`, `bin/gstack-${name}`, `bin/${name}.ts`, `bin/gstack-${name}.ts`]) if (files.has(bin)) addEdge(graph, bin, test, 'convention');
+  for (const test of graph.tests) for (const bin of conventionBins(test, files)) addEdge(graph, bin, test, 'convention');
+  if (opts.goneSources) {
+    const present = new Set(all);
+    graph.goneSubjects = new Map();
+    for (const [rel, source] of opts.goneSources) {
+      const targets = [...referencesIn(files, dirs, rel, source, config, undefined, packages).map(r => r.target), ...conventionBins(rel, files)];
+      graph.goneSubjects.set(rel, [...new Set(targets)].filter(t => present.has(t) && !isTestFile(t) && !TEST_TREE.test(t)).sort());
     }
   }
   for (const [glob, tests] of Object.entries(opts.declarations ?? {})) {

@@ -13,6 +13,11 @@
  * A release manifest whose diff against the merge base changes only version
  * values is waived as version-stamp-only (lib/pregate/stamp-only.ts) and named
  * on its own line; any other change to it still needs a lane.
+ * A removed test (deleted, or a rename's old name) no remaining test selects
+ * owes no lane when nothing remaining imports it, and is named on its own
+ * `removed (no lane owed)` line; it runs the tests of files that still name it,
+ * and a deleted test runs its owning suite or names the files that lost their
+ * last test (issue #3529). Any other removal owes what an edit owes.
  * A test that reads the file still selects that test.
  * Incidents: p0-4-pipe-hidden-failure (`false | tail` read as green),
  * p0-4-windows-lane-unrun (a Windows-only change merged with its lane unrun).
@@ -344,6 +349,7 @@ function unfinished(ctx: PregateContext, r: Awaited<ReturnType<typeof runLocal>>
 
 function describe(sel: Selection, noPolicy = false): string[] {
   const lines = noPolicy ? [`no policy: ${sel.noLane.join(' ')} have no test lane (a warning under no policy; the starter below maps them)`] : sel.noLane.map(f => `FAIL lanes — ${f} has no test lane`);
+  for (const r of sel.removed) lines.push(`removed (no lane owed): ${r.file} — ${r.note}`);
   if (sel.emptyLane.length) lines.push(`docs/no-tests (empty lane): ${sel.emptyLane.join(' ')}`);
   if (sel.inert.length) lines.push(`no-tests (assets and tool config): ${sel.inert.join(' ')}`);
   if (sel.stampOnly.length) lines.push(`version-stamp-only (no lane needed): ${sel.stampOnly.join(' ')} — only version values changed against the merge base; a manifest whose other content changed still needs a lane`);
@@ -502,10 +508,13 @@ async function run(ctx: PregateContext): Promise<CheckResult> {
   const inputs = baseInputs(ctx, { selection: sha256(sel.tests.join('\n')), localTests: sha256(sel.localTests.join('\n')), remote: sha256(sel.remote.map(r => `${r.lane}:${r.tests.join(',')}`).join('\n')) });
   const noPolicy = sel.noLane.length > 0 && ctx.configKind === 'none';
   const base: CheckResult = { id: 'lanes', stage: 'tests', status: 'pass', inputs, lines: describe(sel, noPolicy), remote: sel.remote };
+  const lost = new Set(sel.removed.flatMap(r => r.lostCoverage)).size;
+  const removedNote = sel.removed.length ? `${sel.removed.length} removed path(s)${lost ? `; ${lost} subject(s) lost their last test` : ''}` : '';
+  const withRemoved = (r: CheckResult): CheckResult => (removedNote ? { ...r, detail: r.detail ? `${r.detail}; ${removedNote}` : removedNote } : r);
   if (sel.noLane.length && !noPolicy) {
-    return { ...base, status: 'fail', cause: 'diff', code: 'PREGATE_NO_LANE', detail: `${sel.noLane.length} touched file(s) with no test lane: ${sel.noLane.join(' ')}`, fix: noLaneFix(ctx, sel.noLane) };
+    return withRemoved({ ...base, status: 'fail', cause: 'diff', code: 'PREGATE_NO_LANE', detail: `${sel.noLane.length} touched file(s) with no test lane: ${sel.noLane.join(' ')}`, fix: noLaneFix(ctx, sel.noLane) });
   }
-  const result = await runSelected(ctx, sel, base);
+  const result = withRemoved(await runSelected(ctx, sel, base));
   return noPolicy ? withStarter(ctx, sel, result) : result;
 }
 

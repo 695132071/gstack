@@ -3211,6 +3211,18 @@ versions, line endings or any non-version byte changed, one under a test,
 fixture, golden, `.gstack/` or workflow tree, or one added, deleted, renamed
 or re-moded, is still this error; `--explain` prints `not version-stamp-only (<reason>)`
 for it.
+A test the branch removed is usually not this error either: a deleted or
+renamed JS, TS, Python, Dart or bats test that nothing remaining imports prints
+`removed (no lane owed): <path> — <why>` instead. It runs the tests of files
+that still name it, and a deleted test runs its owning suite or says
+`coverage removed: <file> has no remaining test`. These are still this error:
+a removed test that remaining code imports or that a file with no test still
+names, a deleted or renamed Go or Ruby test, a deleted test whose merge-base
+text cannot be read (a symlink, invalid UTF-8, over 1 MiB), any other removed
+path (a renamed source file's old name included), and a modified file whose
+only test the branch deleted. `--explain` prints the reason as `<path>:
+removed, but …` (`<path>: removed test whose merge-base text could not be
+read …` for an unreadable deleted test).
 
 **Fix.** Add a test that names the file, or declare its lane (an explicit `[]`
 for files with no behaviour) under `dependencies` in `.gstack/pregate.json` (or the user-owned file the message names).
