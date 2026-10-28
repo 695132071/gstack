@@ -222,8 +222,13 @@ describe('test_backend config', () => {
     expect(cfg('set', 'test_backend', 'mars').code).not.toBe(0);
     expect(cfg('get', 'test_backend').out).toBe('ubicloud');
     expect(cfg('defaults').out).toContain('test_backend');
+    const coresRow = (root: string) => {
+      const r = spawnSync('bash', [path.join(ROOT, 'bin', 'gstack-doctor'), '--check', '--require', 'cores'], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, GSTACK_STATE_ROOT: root, GSTACK_HOME: root } });
+      return (r.stdout ?? '').split('\n').find(line => line.startsWith('PASS cores ')) ?? `no cores row: ${r.stdout}${r.stderr}`;
+    };
+    expect(coresRow(state)).toContain('test_backend=ubicloud');
+    expect(coresRow(tmp('gstack-test-backend-unset-'))).toContain('test_backend=local');
     const doctor = fs.readFileSync(path.join(ROOT, 'bin', 'gstack-doctor-check.sh'), 'utf8');
-    expect(doctor).toContain('gstack-config" get test_backend');
     expect(doctor).toContain('set gstack-config set test_backend ubicloud, scripts/ubicloud/ubi-runner.sh');
   });
 });

@@ -2,7 +2,7 @@
 # gstack-doctor-check.sh — `gstack-doctor --check`: the one-line install verdict.
 #
 # Sourced by bin/gstack-doctor after its prelude (ROOT, ROOT_REAL, BIN, SRC,
-# DOCS, STATE_ROOT, EXE, clamp, the launch probe, the codex status helpers)
+# DOCS, STATE_ROOT, EXE, clamp, cfg, the launch probe, the codex status helpers)
 # and never executed on its own. Prints `required: <ids>`, one
 # `PASS | FAIL | SKIP <id>` row per component in bin/gstack-doctor-components.sh
 # (generated from lib/doctor-components.ts; the same ids feed --for, --require
@@ -142,7 +142,7 @@ _dc_check_patch() {
   fi
   # A tier 2+ render keeps the patch in the shared sections/preamble.md its SKILL.md points to.
   for f in "$file" "${file%/SKILL.md}/sections/preamble.md"; do
-    model=$(grep -F 'Model-Specific Behavioral Patch (' "$f" 2>/dev/null | head -1 | sed 's/.*Model-Specific Behavioral Patch (\([^)]*\)).*/\1/' | clamp 'A-Za-z0-9._:/-' 60)
+    model=$(grep -F 'Model-Specific Behavioral Patch (' "$f" 2>/dev/null | sed 's/.*Model-Specific Behavioral Patch (\([^)]*\)).*/\1/' | clamp 'A-Za-z0-9._:/-' 60)
     [ -n "$model" ] && { file="$f"; break; }
   done
   if [ -n "$model" ]; then
@@ -154,7 +154,7 @@ _dc_check_patch() {
 
 _dc_check_codex_cli() {
   local probe="$BIN/gstack-codex-probe" reviews sel rc model out state optional_note="optional; a Claude subagent serves as the outside voice"
-  reviews=$("$BIN/gstack-config" get codex_reviews 2>/dev/null || echo enabled)
+  cfg codex_reviews enabled; reviews=$_cfg
   if ! command -v codex >/dev/null 2>&1; then
     _dc_fail_or_skip codex-cli "Codex CLI not installed" "npm install -g @openai/codex, then codex login" COMPONENT_MISSING "$optional_note; Codex CLI not installed"
     return
@@ -228,7 +228,7 @@ _dc_check_browser() {
   if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q '^RENDER_OK'; then
     _dc_row PASS browser "Chromium $(printf '%s\n' "$out" | sed -n 's/^RENDER_OK //p' | clamp '0-9.' 20) launched and rendered ($engine)"
   else
-    _dc_row FAIL browser "Chromium did not launch and render via $engine (exit $rc: $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | head -1 | clamp ' -~' 160))" "$fix" BROWSER_UNAVAILABLE
+    _dc_row FAIL browser "Chromium did not launch and render via $engine (exit $rc: $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | clamp ' -~' 160))" "$fix" BROWSER_UNAVAILABLE
   fi
 }
 
@@ -238,7 +238,7 @@ _dc_check_cso() {
     _dc_row PASS cso "native helper built"
     return
   fi
-  [ -f "$file" ] && reason=$(sed -n 's/^reason=//p' "$file" 2>/dev/null | head -1 | clamp ' -~' 100)
+  [ -f "$file" ] && reason=$(sed -n 's/^reason=//p' "$file" 2>/dev/null | clamp ' -~' 100)
   _dc_fail_or_skip cso "native helper not built${reason:+ ($reason)}" "cd $SRC && ./setup (it names any missing build prerequisite)" COMPONENT_MISSING "optional; toolchain absent or helper not built${reason:+: $reason}"
 }
 
@@ -376,7 +376,7 @@ _dc_check_pins() {
             return
           fi
           _dc_row FAIL pins "$failline$note" "$fix" PROJECT_PIN_MISMATCH ;;
-    *) _dc_row SKIP pins "gstack-runtime-pins could not evaluate $project (exit $rc: $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | head -1 | clamp ' -~' 120))" ;;
+    *) _dc_row SKIP pins "gstack-runtime-pins could not evaluate $project (exit $rc: $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | clamp ' -~' 120))" ;;
   esac
 }
 
@@ -394,7 +394,7 @@ _dc_check_state_root() {
 }
 
 # _dc_cfg KEY DEFAULT — a clamped config value, never the file or a message.
-_dc_cfg() { local v; v=$("$BIN/gstack-config" get "$1" 2>/dev/null </dev/null | clamp 'a-z0-9_-' 24); printf '%s' "${v:-$2}"; }
+_dc_cfg() { local v; cfg "$1" "$2"; v=$(printf '%s' "$_cfg" | clamp 'a-z0-9_-' 24); printf '%s' "${v:-$2}"; }
 
 _dc_check_privacy() {
   _dc_row PASS privacy "telemetry=$(_dc_cfg telemetry off) artifacts_sync=$(_dc_cfg artifacts_sync_mode off) codex_reviews=$(_dc_cfg codex_reviews enabled) update_check=$(_dc_cfg update_check true)"
@@ -408,7 +408,7 @@ _dc_check_cores() {
   local n backend
   n=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 0)
   n=$(printf '%s' "$n" | clamp '0-9' 6)
-  backend=$("$BIN/gstack-config" get test_backend 2>/dev/null </dev/null | clamp 'a-z' 8); backend=${backend:-local}
+  cfg test_backend local; backend=$(printf '%s' "$_cfg" | clamp 'a-z' 8); backend=${backend:-local}
   case "$n" in ''|0) _dc_row PASS cores "unknown CPU count test_backend=$backend"; return ;; esac
   if [ "$n" -lt 8 ] && [ "$backend" = local ]; then
     _dc_row PASS cores "$n test_backend=local (under 8: run full unit and E2E tiers on a remote gate; set gstack-config set test_backend ubicloud, scripts/ubicloud/ubi-runner.sh)"
@@ -454,7 +454,7 @@ _dc_check_min_revision() {
 
 _dc_check_revision() {
   local installed head="" want="$CHECK_REVISION" target=""
-  installed=$(head -1 "$ROOT/VERSION" 2>/dev/null | clamp '0-9A-Za-z.+-' 40)
+  installed=$(clamp '0-9A-Za-z.+-' 40 2>/dev/null <"$ROOT/VERSION")
   head=$(git -C "$ROOT_REAL" rev-parse --short HEAD 2>/dev/null | clamp '0-9a-f' 12)
   _dc_revision="${installed:-unknown}"
   _dc_check_min_revision "${installed:-0}" "$head" || return
@@ -500,7 +500,7 @@ _dc_check_floor() {
   # first occurrence wins (the top-level field in a policy file), and only the
   # first 64 KiB are read: a real policy is a few KB.
   flat=$(head -c 65536 "$file" 2>/dev/null | tr '\n\r\t' '   ')
-  floor=$(printf '%s' "$flat" | grep -o '"'"$GSTACK_PROJECT_FLOOR_FIELD"'" *: *"[0-9][0-9.]*"' | head -1 | sed 's/.*"\([0-9][0-9.]*\)"$/\1/' | clamp '0-9.' 32)
+  floor=$(printf '%s' "$flat" | grep -o '"'"$GSTACK_PROJECT_FLOOR_FIELD"'" *: *"[0-9][0-9.]*"' | sed 's/.*"\([0-9][0-9.]*\)"$/\1/' | clamp '0-9.' 32)
   if [ -z "$floor" ]; then
     if printf '%s' "$flat" | grep -q '"'"$GSTACK_PROJECT_FLOOR_FIELD"'" *: *"'; then
       _dc_row SKIP floor "$file sets $GSTACK_PROJECT_FLOOR_FIELD to something other than a plain dotted version"
@@ -509,7 +509,7 @@ _dc_check_floor() {
     fi
     return
   fi
-  installed=$(head -1 "$ROOT/VERSION" 2>/dev/null | clamp '0-9A-Za-z.+-' 40)
+  installed=$(clamp '0-9A-Za-z.+-' 40 2>/dev/null <"$ROOT/VERSION")
   if _dc_version_below "${installed:-0}" "$floor"; then
     if [ -n "${GSTACK_CAPY_WRAPPER_PATH:-}" ]; then
       fix="bash $GSTACK_CAPY_WRAPPER_PATH${CHECK_FOR:+ --for $CHECK_FOR} (fast-forwards a clean checkout to origin and reinstalls), or $SRC/bin/gstack-upgrade"

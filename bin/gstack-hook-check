@@ -155,11 +155,17 @@ ts_entries() {
 # One bun process bundles every hook's TypeScript entries (a bun start costs
 # seconds on Windows). Each line is "<entry>\tok\t<input>" per bundled input,
 # or "<entry>\tfail\t<file:line>\t<message>".
+# TS_OF[i] keeps hook i's entries for the check loop below, so each shim is
+# scanned once (four process starts, ~80 ms on Windows).
 ENTRIES=""
+i=0
 for hook in $HOOKS; do
   shim="$ROOT/$hook"
+  TS_OF[i]=""
+  [ -f "$shim" ] && TS_OF[i]=$(ts_entries "$shim")
+  i=$((i + 1))
   [ -f "$shim" ] || continue
-  for entry in $(ts_entries "$shim"); do
+  for entry in ${TS_OF[i - 1]}; do
     [ -f "${shim%/*}/$entry" ] && ENTRIES="$ENTRIES${shim%/*}/$entry$NL"
   done
 done
@@ -190,11 +196,14 @@ if [ -n "$ENTRIES" ]; then
     }' $ENTRIES) > "$BUILT" 2>/dev/null || true
 fi
 
+i=0
 for hook in $HOOKS; do
   shim="$ROOT/$hook"
+  i=$((i + 1))
   if [ ! -f "$shim" ]; then echo "missing $hook"; continue; fi
   hook_ok=1
-  shebang=$(head -1 "$shim")
+  shebang=""
+  IFS= read -r shebang < "$shim"
   case "$shebang" in
     '#!'*bash*) interp=bash ;;
     '#!'*/sh|'#!'*/sh' '*|'#!'*' sh'|'#!'*' sh '*) interp=sh ;;
@@ -217,7 +226,7 @@ for hook in $HOOKS; do
     scan="$scan$NL$helper"
   done
   dir=${shim%/*}
-  for entry in $(ts_entries "$shim"); do
+  for entry in ${TS_OF[i - 1]}; do
     if [ ! -f "$dir/$entry" ]; then
       fail "$hook" "$dir/$entry:1" "missing TypeScript entry (the hook runs it)"
       hook_ok=0
@@ -244,7 +253,11 @@ for hook in $HOOKS; do
   # and -H prefixes "<file>:<line>:" (the line is the last colon field before
   # the marker text, so paths containing colons still split right).
   # shellcheck disable=SC2046 # newline-split list (IFS is a newline)
-  for found in $(grep -HnE -m1 '^(<<<<<<<|=======|>>>>>>>)( |$)' $(printf '%s\n' "$scan" | awk '!seen[$0]++') 2>/dev/null); do
+  files=""
+  for f in $scan; do
+    case "$NL$files" in *"$NL$f$NL"*) ;; *) files="$files$f$NL" ;; esac
+  done
+  for found in $(grep -HnE -m1 '^(<<<<<<<|=======|>>>>>>>)( |$)' $files 2>/dev/null); do
     marker_file=${found%%:[0-9]*:[<=>]*}
     marker_line=${found#"$marker_file":}
     marker_line=${marker_line%%:*}

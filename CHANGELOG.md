@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.91.294.0] - 2026-10-28
+
+**`gstack-doctor` and setup's hook check start far fewer processes, so the doctor tests fit the Windows CI lane again.** On Windows Git Bash each process start costs 12 to 77 ms, and the doctor spent most of its time starting them: about 3.3 s per `--check` and 6 s per dashboard run. `windows-free-shard (1)` was red on main because `test/gstack-doctor.test.ts` took 553 to 647 s there. Every doctor row, fix line and JSON field prints the same as before.
+
+### Changed
+- **`bin/gstack-doctor`**: `clamp` uses bash builtins under `LC_ALL=C`, bytewise like the `tr` and `cut` it replaces. The doctor reads `codex_reviews`, `artifacts_sync_mode`, `telemetry`, `update_check` and `test_backend` in-process through `gstack_config_select`, the reader `gstack-config get` uses, with the same defaults, instead of starting `gstack-config` six times per `--check`.
+- **`bin/gstack-hook-check`** scans each hook shim's TypeScript entries once, reads the shebang with `read` and dedupes its marker-scan list in bash.
+- **`bin/gstack-launch-probe.sh`** takes the first non-blank output line in one subshell instead of a five-process pipeline.
+- Measured on `windows-latest` (profile runs 40672710554 and 40676938495): the doctor test file went from 481 s to 185 s, its slowest case from 25.6 s to 9.9 s, and shard 1 from 682 s (red) to 402 s (green). Dispatched run 40678519767 was green on all six Windows shards.
+
+### Tests
+- `test/gstack-doctor.test.ts`: the `--check` state-root row names `GSTACK_HOME` when `GSTACK_HOME` selected the root, in text and JSON.
+- `test/gstack-launch-probe.test.ts`: a broken binary's detail is its first non-blank line, with CRs dropped, cut to 200 bytes.
+
+### Gate integrity
+- `test/owner-brief-contributor-banned.test.ts` no longer pins the source text `gstack-config" get test_backend` in `bin/gstack-doctor-check.sh`, which the in-process read removed. It runs `gstack-doctor --check --require cores` against a state root holding `test_backend: ubicloud` and expects `test_backend=ubicloud`, with an empty state root as the negative control (`test_backend=local`). The under-8-cores wording pin stays.
+
 ## [1.91.293.0] - 2026-10-28
 
 **`gstack-harness` errors print again, and `register qm` says plainly that QM cannot import gstack yet.** Every refused `gstack-harness` command crashed with `TypeError: e.line is not a function` instead of printing its reason, because Bun gives each thrown error its own numeric `line` property. Harness Evals then found that QM registration never worked: QM imports a skill pack by cloning the whole repository and stops at 32 MiB and 5,000 files, and gstack's repository is about 73 MiB in 4,300 files.

@@ -507,6 +507,20 @@ describe('gstack-doctor --check', () => {
     expect(probeCalls(f)).not.toContain('probe-model');
   });
 
+  // Value: protects=the --check state-root row names the variable that selected the root, after earlier rows read config;
+  //   fails_when=an in-process config read reselects the root from the doctor's own GSTACK_STATE_ROOT;
+  //   why_new=every other fixture sets GSTACK_STATE_ROOT itself, so a wrong "selected by" still reads GSTACK_STATE_ROOT; seam=none;
+  //   no_claim=CLAUDE_PLUGIN_DATA and default selection (GSTACK_HOME stands in for every selector other than GSTACK_STATE_ROOT)
+  test('the state-root row names GSTACK_HOME when GSTACK_HOME selected the root, in text and JSON', () => {
+    const f = makeFixture();
+    installCodex(f);
+    const byHome = { GSTACK_STATE_ROOT: '', GSTACK_HOME: f.state };
+    const r = row(f, [], byHome);
+    expect(r.rows['state-root'].rest, r.out).toContain('(selected by GSTACK_HOME;');
+    const json = JSON.parse(doctor(f, ['--json'], byHome).out);
+    expect(json.rows.find((x: { id: string }) => x.id === 'state-root').detail).toContain('(selected by GSTACK_HOME;');
+  });
+
   test('--for autoplan: healthy Capy machine with Claude subagents as the outside voice and no Codex CLI passes', () => {
     const f = makeFixture();
     installCodex(f);

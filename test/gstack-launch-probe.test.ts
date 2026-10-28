@@ -51,6 +51,14 @@ describe.skipIf(process.platform === 'win32')('gstack-launch-probe.sh classifica
     expect(probe(fakeBinary('echo "Unknown argument: --version" >&2; exit 3'))).toEqual({ state: 'broken', detail: 'exit 3: Unknown argument: --version' });
   });
 
+  // Value: protects=the detail is the first non-blank line with CRs dropped, cut to 200 bytes (Windows CRLF output);
+  //   fails_when=the builtin line picker keeps a CR, returns a blank line or cuts at another length;
+  //   why_new=every other case prints one clean LF line; seam=none; no_claim=real Git Bash output (a sh fake prints the bytes)
+  test('a broken binary\'s detail is its first non-blank line, CRs dropped, at most 200 bytes', () => {
+    const long = 'y'.repeat(250);
+    expect(probe(fakeBinary(`printf '\\r\\n  \\n\\t\\r\\n${long}\\r\\nnext\\n'; exit 3`))).toEqual({ state: 'broken', detail: `exit 3: ${'y'.repeat(200)}` });
+  });
+
   test('an absent binary is missing', () => {
     expect(probe(fakeBinary(null)).state).toBe('missing');
   });

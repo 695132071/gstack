@@ -93,7 +93,14 @@ row() {
 sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 # clamp CHARSET MAX — stdin's first line reduced to CHARSET, at most MAX chars.
-clamp() { head -1 | tr -cd "$1" | cut -c1-"$2"; }
+# Builtins only, bytewise like tr and cut: every caller feeds it stdin, and on
+# Windows a head | tr | cut chain costs three process starts (~60 ms).
+clamp() { local LC_ALL=C line pat="[^$1]"; IFS= read -r line; line=${line//$pat/}; printf '%s' "${line:0:$2}"; }
+
+# cfg KEY DEFAULT — sets _cfg to KEY as `gstack-config get` reads it, or DEFAULT
+# (gstack-config's own default) when unset. In-process through
+# gstack-state-root.sh, sourced below: a gstack-config start costs ~200 ms on Windows.
+cfg() { local sr_var=${_gstack_sr_var-}; gstack_config_select "$1" 2>/dev/null; _gstack_sr_var=$sr_var; _cfg="${_gstack_cfg_value:-$2}"; }
 
 # epoch_of VALUE — epoch seconds for an epoch or an ISO-8601 UTC time; "" otherwise.
 epoch_of() {
@@ -202,7 +209,7 @@ check_hooks() {
 check_codex() {
   local reviews probe="$BIN/gstack-codex-probe" sel rc model src
   CODEX_READY=0
-  reviews=$("$BIN/gstack-config" get codex_reviews 2>/dev/null || echo enabled)
+  cfg codex_reviews enabled; reviews=$_cfg
   if [ "$reviews" = disabled ]; then
     row "not configured" codex "codex_reviews disabled; $CODEX_FEATURES skip Codex" "$BIN/gstack-config set codex_reviews enabled"
     return
@@ -269,7 +276,7 @@ check_codex_probe() {
 
 check_sync() {
   local mode file json status held drainable drain push queue=0 now f detail case_names fix="$BIN/gstack-brain-sync --status"
-  mode=$("$BIN/gstack-config" get artifacts_sync_mode 2>/dev/null || echo off)
+  cfg artifacts_sync_mode off; mode=$_cfg
   if [ ! -d "$STATE_ROOT/.git" ]; then
     row "not configured" "artifacts sync" "off; cross-machine artifacts sync is unavailable" "$BIN/gstack-artifacts-init"
     return
@@ -373,7 +380,7 @@ check_binaries() {
 check_cso() {
   local file="$SRC/bin/.gstack-cso-build-result" result stage reason installed diag usable=0
   [ -x "$SRC/bin/gstack-cso-launcher$EXE" ] && [ -x "$SRC/bin/gstack-cso-core$EXE" ] && usable=1
-  cso_field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | head -1 | clamp ' -~' 200; }
+  cso_field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | clamp ' -~' 200; }
   result=$(cso_field result) stage=$(cso_field stage) reason=$(cso_field reason) installed=$(cso_field installed) diag=$(cso_field diagnostic)
   case "$result" in
     ok) if [ "$usable" -eq 1 ]; then row ok cso "native helper $installed"
@@ -603,7 +610,7 @@ if [ "$CHECK" -eq 1 ]; then
   exit $?
 fi
 
-echo "gstack doctor $(head -1 "$ROOT/VERSION" 2>/dev/null | clamp '0-9A-Za-z.+-' 40)"
+echo "gstack doctor $(clamp '0-9A-Za-z.+-' 40 2>/dev/null <"$ROOT/VERSION")"
 check_install
 check_rescue_refs
 check_state_root
