@@ -3152,7 +3152,10 @@ cannot be downgraded; every other check id in `warn` is honoured only from the
 base branch's copy or the user-owned file. For the user-owned file, edit it
 directly at the path the message names. A user file inside the repository, or
 reached through a symlink into it, is ignored rather than read (`--explain`
-names it).
+names it). An unknown `sealed` key that a newer gstack defines (such as
+`allow_paths` or `case_insensitive`) means this machine's gstack is older than
+the policy: upgrade gstack here, and raise `min_gstack_version` in the
+repository's `.gstack/ship-policy.json` before landing such a key.
 
 <a id="pregate-secrets"></a>
 ### `PREGATE_SECRETS`
@@ -3658,7 +3661,11 @@ finding: rule, `file[:line]`, commit. They never print the matched text.
 
 **Fix.** Remove the output from every published commit before the branch
 reaches the public repository (a later commit that deletes it still publishes
-it). A reviewed false positive gets one line in the base branch's
+it). A publishable file kept next to sealed data (a `MANIFEST.json` of hashes
+and counts) can be exempted from the path rules with a `sealed.allow_paths`
+glob in the base branch's `.gstack/pregate.json`; the text rules still read it
+([docs/pregate.md#sealed](pregate.md#sealed)). A reviewed false positive gets
+one line in the base branch's
 `.gstack/sealed-allow.tsv`: `rule<TAB>path<TAB>sha<TAB>reason`. A private
 destination sets `"visibility": "private"` under `sealed` in the base branch's
 `.gstack/pregate.json`. Capy's pull-request tool may not run local hooks, so
