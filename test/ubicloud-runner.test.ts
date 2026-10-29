@@ -391,7 +391,6 @@ describe('ubi-runner run, verify and quota against a fake API and a fake ssh', (
       'cmd=${*: -1}\n' +
       'printf \'%s\\n\' "$cmd" >> "$root/ssh.log"\n' +
       'case "$cmd" in\n' +
-      '  *-O*) exit 0 ;;\n' +
       '  *pkill*) echo "$cmd" >> "$root/cancel.log" ;;\n' +
       '  *captured*) cat > "$root/captured" ;;\n' +
       '  *"cat > ~/.ubirun-env"*) cat > "$root/ubirun-env" ;;\n' +
@@ -455,6 +454,18 @@ describe('ubi-runner run, verify and quota against a fake API and a fake ssh', (
       expect(r.stderr.toString()).toMatch(/watchdog: command ran \d+s \(UBI_RUN_TIMEOUT=3\); killing it/);
       expect(r.stderr.toString()).toContain('command exited 124 after');
       expect(f.calls()).toContain('destroy');
+    } finally { rmSync(f.root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('run: the fake ssh dispatches on the remote command, so a checkout whose name holds -O still syncs and runs (GSTA-139)', () => {
+    const f = fakeVm();
+    try {
+      const checkout = join(f.root, 'ubi-run-O1x2y3');
+      mkdirSync(checkout);
+      const r = run(f, ['run', '--src', checkout, '--', 'make test']);
+      expect(r.exitCode, r.stderr.toString()).toBe(0);
+      expect(r.stdout.toString()).toContain('ran: ');
+      expect(f.ssh()).toContain('tar -xzf - -C work/ubi-run-O1x2y3');
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   }, 60_000);
 

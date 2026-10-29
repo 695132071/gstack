@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 const ROOT = path.resolve(import.meta.dir, '..');
-test.each(['success', 'bash-edit', 'max-turns', 'no-edit', 'no-commit', 'runner', 'retry', 'directory', 'recording', 'late-timeout'])
+test.each(['success', 'bash-edit', 'max-turns', 'no-edit', 'no-commit', 'runner', 'retry', 'directory', 'recording', 'late-timeout', 'slow-setup'])
   ('QA attempt recording and fixture ownership: %s', scenario => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-fix-body-'));
     const script = path.join(dir, 'body.fixture.test.ts');
@@ -21,7 +21,10 @@ const scenario = ${JSON.stringify(scenario)};
 const attempts = [], records = [], servers = [];
 const late = scenario === 'late-timeout';
 const workMs = 1000, drainMs = 80;
-let finalized = false, outerMs;
+const realNow = Date.now, slowSetup = scenario === 'slow-setup';
+let finalized = false, outerMs, frozenAt, clock = realNow();
+if (late) Date.now = () => frozenAt ?? realNow();
+else if (slowSetup) Date.now = () => clock;
 const collector = { addTest: entry => {
   records.push({ ...entry, afterFinalization: finalized });
   if (scenario === 'recording') throw new Error('QA recorder failure');
@@ -36,7 +39,7 @@ Bun.serve = options => {
   return server;
 };
 mock.module(path.join(root, 'test/helpers/aside-available.ts'), () => ({ asideAvailable: () => false }));
-if (late) mock.module(path.join(root, 'test/helpers/eval-budgets.ts'), () => ({
+if (late || slowSetup) mock.module(path.join(root, 'test/helpers/eval-budgets.ts'), () => ({
   JUDGE_MS: 120_000, CAPTURE_MS: 300_000, CAPTURE_LONG_MS: workMs,
 }));
 mock.module(path.join(root, 'test/helpers/e2e-helpers.ts'), () => ({
@@ -46,13 +49,13 @@ mock.module(path.join(root, 'test/helpers/e2e-helpers.ts'), () => ({
   testConcurrentIfSelected: (id, body, budget) => {
     if (id !== 'qa-fix-loop') return;
     outerMs = budget;
-    // Keep the actual native outer deadline, scaling only its 5s recording
-    // margin to80ms. The pre-fix equal work/outer deadline stays equal.
-    const nativeBudget = late ? (budget >= workMs + 5000 ? budget - 5000 + 80 : budget) : 5000;
-    test(id, body, nativeBudget);
+    // The late attempt's clock stands still through its real setup, so the
+    // mocked work budget reaches the capture whole; the deadline is the
+    // registered outer budget.
+    test(id, late ? () => { frozenAt = realNow(); return body(); } : body, late ? budget : 5000);
   },
   copyDirSync: (source, target) => fs.cpSync(source, target, { recursive: true }),
-  setupBrowseShims: cwd => fs.mkdirSync(path.join(cwd, 'browse/bin'), { recursive: true }),
+  setupBrowseShims: cwd => { fs.mkdirSync(path.join(cwd, 'browse/bin'), { recursive: true }); if (slowSetup) clock += 400; },
   logCost: () => {}, createEvalCollector: () => collector, finalizeEvalCollector: async () => {},
   recordE2E: (_collector, name, suite, result, extra) => collector.addTest({
     name, suite, exit_reason: result.exitReason, model: result.model,
@@ -62,6 +65,7 @@ mock.module(path.join(root, 'test/helpers/e2e-helpers.ts'), () => ({
 mock.module(path.join(root, 'test/helpers/session-runner.ts'), () => ({
   SESSION_DRAIN_GRACE_MS: late ? drainMs : 5000,
   runSkillTest: async options => {
+    frozenAt = undefined;
     const cwd = options.workingDirectory;
     const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 5000 });
     const initial = fs.readFileSync(path.join(cwd, 'index.html'), 'utf8');
@@ -102,6 +106,7 @@ afterAll(async () => {
   // behind child exit; this reproduces the observed late recording race.
   if (late) await new Promise(resolve => setTimeout(resolve, 200));
   fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ attempts, records, servers, outerMs }));
+  Date.now = realNow;
 });
 await import(path.join(root, 'test/skill-e2e-qa-workflow.test.ts'));
 `);
@@ -152,11 +157,11 @@ await import(path.join(root, 'test/skill-e2e-qa-workflow.test.ts'));
       }
       if (scenario === 'late-timeout') {
         expect(outerMs).toBe(1000 + 80 + 5000);
-        expect(attempts[0].captureBudgetMs).toBeGreaterThan(0);
-        expect(attempts[0].captureBudgetMs).toBeLessThan(1000);
+        expect(attempts[0].captureBudgetMs).toBe(1000);
         expect(records[0].exit_reason).toBe('timeout');
         expect(child.stderr).not.toContain('Unhandled error between tests');
       }
+      if (scenario === 'slow-setup') expect(attempts[0].captureBudgetMs).toBe(1000 - 400);
       if (scenario === 'directory') {
         expect(attempts[0].directoryStatus).toBe(404);
         expect(attempts[0].missingStatus).toBe(404);

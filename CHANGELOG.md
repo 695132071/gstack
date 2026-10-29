@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.91.300.0] - 2026-10-28
+
+**Three free tests that went red at random now fail only when the code under test is wrong.** Today's flaky-test pass (GSTA-139) traced two Linux reds to their fixtures and fixed a third that was certain to fail under load. No product code changed.
+
+### Fixed
+- **`test/ubicloud-runner.test.ts`**: the watchdog cases expected exit 124 but got 2 or 0, about one run in 62. The cause was not timing. The fake `ssh` had a `*-O*` case arm, meant for `ssh -O exit` but never matched by it, and it caught any remote command whose checkout path held `-O`. That happened whenever the fixture's temporary directory name started with `O`. The arm is gone, and a new test runs a checkout named `ubi-run-O1x2y3`.
+- **`test/ship-queue-train.test.ts`, `test/gstack-ship-queue.test.ts`**: `coordinatorClone` now clones the fixture origin with `--no-local`, through git's transport like a real clone of GitHub, instead of copying `origin.git/objects` file by file. Every push into the fixture origin leaves a detached `git maintenance run --auto` there. The local transport drops the shard's `GIT_CONFIG_COUNT` maintenance-off setting, so that process still creates and deletes `objects/maintenance.lock` after the push returns. Two runs failed with `failed to copy file … No such file or directory` on a loose object. The process that removed that object was not identified; the transport clone never lists the directory at all.
+- **`test/qa-fix-loop-fixture.test.ts` late-timeout**: the scenario ran its real setup inside a 1000 ms mocked work budget under a 1160 ms deadline, so on a loaded machine the attempt never started (0 of 10 runs under 24 busy loops). It now uses #3413's qa-only fix: the clock stands still from the test body's start until the capture begins, and the deadline is the registered 6080 ms outer budget (20 of 20 under the same load).
+
+### Gate integrity
+- `test/qa-fix-loop-fixture.test.ts` late-timeout asserts that the capture gets exactly 1000 ms, where it used to accept anything between 0 and 1000, and its test deadline is the registered outer budget rather than budget − 5000 + 80 ms. If the workflow's outer budget drops back to the bare work budget, the scenario still fails. A new `slow-setup` scenario keeps the check the old range assertion gave. A controlled clock spends 400 ms in setup, and the capture must get exactly 600 ms. If the workflow passed the whole work budget to the capture instead of what setup left, it would fail.
+
 ## [1.91.299.0] - 2026-10-28
 
 **The Captain brief now says what `rec` does when a gate carries earlier decisions.** At a gate after the owner already answered some items, such as a round-cap gate, `gstack-owner-brief render --captain` listed each item's recommendation ("keep the plan as written", `rec resolves to d2a`) while `gstack-gate render` and `gstack-autoplan answer --reply rec` keep the carried answer (`d2b`). A Captain relaying the brief told the owner the opposite of what their one-word reply would record (#3546). The brief now takes its choices from the same resolver `gstack-gate render` uses.

@@ -98,10 +98,18 @@ export function ghQueueShim(repo: FixtureRepo, data: { prs: Record<string, unkno
   return { PATH: `${dir}:${process.env.PATH ?? ''}` };
 }
 
-/** A coordinator's separate clone of the fixture origin. */
+/**
+ * A coordinator's separate clone of the fixture origin, fetched through git's
+ * transport (--no-local) like a real clone of GitHub. A local clone copies
+ * origin.git/objects entry by entry, and every push into the fixture origin
+ * leaves a detached `git maintenance run --auto` there that creates and
+ * deletes objects/maintenance.lock after the push returns: local transport
+ * drops the shard's GIT_CONFIG_COUNT maintenance-off backstop, so it never
+ * reaches that receive-pack.
+ */
 export function coordinatorClone(repo: FixtureRepo): string {
   const dir = path.join(repo.root, 'coordinator');
-  const r = spawnSync('git', ['clone', '-q', repo.origin, dir], { timeout: 60_000, env: { ...process.env, ...repo.env } });
+  const r = spawnSync('git', ['clone', '-q', '--no-local', repo.origin, dir], { timeout: 60_000, env: { ...process.env, ...repo.env } });
   if (r.status !== 0) throw new Error(`clone failed: ${r.stderr?.toString()}`);
   return dir;
 }

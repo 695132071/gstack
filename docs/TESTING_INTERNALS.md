@@ -1427,7 +1427,13 @@ Free-suite flake rules:
   every shard child's `GIT_CONFIG_*` pairs as a backstop, so it covers fixtures
   that inherit the environment, and `bun run scripts/ship-measure.ts free
   --backend local` measures with that environment; a fixture with its own
-  replacement env never sees the backstop.
+  replacement env never sees the backstop. Neither does the receiving side of
+  a push to a local path: git's local transport drops `GIT_CONFIG_*` from the
+  `receive-pack` it starts, so every push into a fixture's bare origin still
+  leaves a detached maintenance run in that origin. A fixture that clones such
+  an origin passes `--no-local` (`coordinatorClone` in
+  `test/helpers/ship-queue-fixture.ts`), so the clone reads it through git's
+  transport instead of copying `objects/` entry by entry.
 
 To reproduce a ledger entry, take the shard's exact file list from the CI run's
 `free-plan` artifact, then rerun it with the flaky retry off on a CI-mirrored VM:

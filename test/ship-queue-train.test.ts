@@ -59,6 +59,15 @@ function publishMain(fx: TrainFixture, prefixCommit: string, version: string, ex
   return repo.git('rev-parse', 'HEAD');
 }
 
+// fails_when=coordinatorClone copies origin.git/objects file by file again, so an entry that appears or vanishes there mid-copy (the detached maintenance.lock every push into the fixture origin leaves) fails the clone, as in two Free Tests reds on 2026-10-28 (GSTA-139 ledger); why_new=no other test clones while origin's objects directory changes; seam=a dangling symlink planted under objects/, which a local copy refuses on every run; no_claim=which process removed the loose object those runs named
+test('the coordinator clone reads origin through git, never by copying its objects directory (GSTA-139)', () => {
+  const fx = make();
+  fs.symlinkSync(path.join(fx.repo.root, 'gone'), path.join(fx.repo.origin, 'objects', 'maintenance.lock'));
+  const coord = coordinatorClone(fx.repo);
+  expect(spawnSync('git', ['-C', coord, 'rev-parse', 'origin/main'], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ...fx.repo.env } }).stdout.trim()).toBe(fx.repo.git('rev-parse', 'origin/main'));
+  expect(fs.existsSync(path.join(coord, '.git', 'objects', 'maintenance.lock'))).toBe(false);
+});
+
 describe('the train command surface', () => {
   test('train with no subcommand (flags only) prints the train help and exits usage; --help exits 0; bad arguments name what is missing', () => {
     const fx = make();
