@@ -423,6 +423,7 @@ describe('cookie auth configuration and bounded operations', () => {
 });
 
 describe('cookie authentication and storage with isolated Chromium profiles', () => {
+  const browserOptions = { identitySelector: options.identitySelector, expectedIdentity: options.expectedIdentity };
   let browser: Browser;
   let context: BrowserContext;
   let page: Page;
@@ -486,13 +487,13 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
   test('verifies a reloaded protected page only with an exact visible identity and synthetic session', async () => {
     await context.addCookies([{ name: 'fixture_session', value: 'approved', url: origin }]);
     await page.goto(`${origin}/protected`);
-    expect(await verifyCookieAuthentication(page, options, origin)).toEqual({ verified: true, reason: 'verified', status: 200 });
+    expect(await verifyCookieAuthentication(page, browserOptions, origin)).toEqual({ verified: true, reason: 'verified', status: 200 });
   });
 
   for (const path of ['/normalized', '/one-visible', '/hidden-child', '/delayed']) {
     test(`accepts one normalized visible identity at ${path}`, async () => {
       await page.goto(`${origin}${path}`);
-      const result = await verifyCookieAuthentication(page, { ...options, expectedIdentity: ` \n${identity} `, timeoutMs: 1000 }, origin);
+      const result = await verifyCookieAuthentication(page, { ...browserOptions, expectedIdentity: ` \n${identity} `, timeoutMs: 1000 }, origin);
       expect(result).toEqual({ verified: true, reason: 'verified', status: 200 });
       expect(JSON.stringify(result)).not.toContain(identity);
     });
@@ -506,7 +507,8 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
     test(`rejects ${path} with a safe ${reason} result`, async () => {
       await page.goto(`${origin}${path === '/login-hop' ? '/identity' : path}`);
       if (path === '/login-hop') await page.evaluate(() => history.replaceState({}, '', '/login-hop'));
-      const result = await verifyCookieAuthentication(page, options, origin);
+      // identity_mismatch/missing/ambiguous keep the 400 ms options (GStack Minder, 2026-10-28): they resolve only when the deadline fires (browse/src/cookie-auth-verification.ts:105-120), so the 15 s default would exceed bun's 5 s test timeout.
+      const result = await verifyCookieAuthentication(page, reason.startsWith('identity_') ? options : browserOptions, origin);
       expect(result.verified).toBe(false);
       expect(result.reason).toBe(reason);
       expect(JSON.stringify(result)).not.toMatch(/Synthetic Account|127\.0\.0\.1/);
@@ -517,13 +519,13 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
     await context.addCookies([{ name: 'fixture_session', value: 'approved', url: origin }]);
     await page.goto(`${origin}/protected`);
     await context.clearCookies();
-    expect((await verifyCookieAuthentication(page, options, origin)).reason).toBe('login_redirect');
+    expect((await verifyCookieAuthentication(page, browserOptions, origin)).reason).toBe('login_redirect');
   });
 
   for (const status of [401, 403, 500, 503]) {
     test(`rejects HTTP ${status} even with a positive identity`, async () => {
       await page.goto(`${origin}/status/${status}`);
-      expect(await verifyCookieAuthentication(page, options, origin)).toEqual({ verified: false, reason: 'http_error', status });
+      expect(await verifyCookieAuthentication(page, browserOptions, origin)).toEqual({ verified: false, reason: 'http_error', status });
     });
   }
 
@@ -531,7 +533,7 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
     for (const destination of ['/redirect-cross', '/roundtrip']) {
       await page.goto(`${origin}/identity`);
       await page.evaluate(path => history.replaceState({}, '', path), destination);
-      expect((await verifyCookieAuthentication(page, options, origin)).reason).toBe('target_changed');
+      expect((await verifyCookieAuthentication(page, browserOptions, origin)).reason).toBe('target_changed');
     }
   });
 
@@ -553,7 +555,7 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
       return value;
     });
     try {
-      expect((await verifyCookieAuthentication(page, options, origin)).reason).toBe('target_changed');
+      expect((await verifyCookieAuthentication(page, browserOptions, origin)).reason).toBe('target_changed');
     } finally {
       locator.mockRestore();
     }
@@ -563,7 +565,7 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
     await page.goto(`${origin}/identity`);
     await page.evaluate(() => history.replaceState({}, '', '/slow'));
     try {
-      expect(await verifyCookieAuthentication(page, { ...options, timeoutMs: 100 }, origin))
+      expect(await verifyCookieAuthentication(page, { ...browserOptions, timeoutMs: 100 }, origin))
         .toEqual({ verified: false, reason: 'timeout' });
     } finally {
       releaseSlowResponse?.();
@@ -572,11 +574,11 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
 
   test('sanitizes invalid selector errors and handles a closed target', async () => {
     await page.goto(`${origin}/identity`);
-    const result = await verifyCookieAuthentication(page, { ...options, identitySelector: '[synthetic-token' }, origin);
+    const result = await verifyCookieAuthentication(page, { ...browserOptions, identitySelector: '[synthetic-token' }, origin);
     expect(result.reason).toBe('verification_failed');
     expect(JSON.stringify(result)).not.toContain('synthetic-token');
     await page.close();
-    expect((await verifyCookieAuthentication(page, options, origin)).reason).toBe('target_closed');
+    expect((await verifyCookieAuthentication(page, browserOptions, origin)).reason).toBe('target_closed');
     expect(await clearCookieTargetStorage(page, origin).then(() => null, error => error)).toMatchObject({ code: 'target_closed' });
   });
 
@@ -586,7 +588,7 @@ describe('cookie authentication and storage with isolated Chromium profiles', ()
       localStorage.setItem('local', 'original');
       sessionStorage.setItem('session', 'original');
     });
-    expect((await verifyCookieAuthentication(page, options, origin)).verified).toBe(true);
+    expect((await verifyCookieAuthentication(page, browserOptions, origin)).verified).toBe(true);
     expect(await page.evaluate(() => [localStorage.getItem('local'), sessionStorage.getItem('session')]))
       .toEqual(['original', 'original']);
   });

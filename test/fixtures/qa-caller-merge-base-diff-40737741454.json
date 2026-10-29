@@ -1,0 +1,101 @@
+{
+  "source": "Paid screen 40737741454 (#3553 head 4cd0777) ship-exploratory-unavailable: paid-slice-11-a1 and paid-rerun-1-a1 native-events.json, every Bash command in order (parent and child). In both trials the review plan dispatched the state-machines specialist, and the parent told it to run git diff with the literal merge-base sha.",
+  "runs": {
+    "40737741454-slice-11": {
+      "root": "/home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs",
+      "mergeBase": "8c9a9c5",
+      "commands": [
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-qa-deadline start /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports/deadline.json 300 2026-10-28T18:00:28.179Z"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports 001 --public --deadline /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports/deadline.json -- bun scripts/probe.ts 4"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-qa-deadline status /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports/deadline.json"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports 002 --public --deadline /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports/deadline.json --after 001 --hypothesis 'Riskiest changed edge: out-of-range 10 must exit 2 with the declared stderr; also confirms whether the missing native-engine prerequisite blocks every CLI path' -- bun scripts/probe.ts 10"
+        },
+        {
+          "parent": false,
+          "command": "bun run test"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-review-plan --base main"
+        },
+        {
+          "parent": true,
+          "command": "git diff 8c9a9c5"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-qa-evidence materialize /home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/product/reports annotations.json"
+        },
+        {
+          "parent": false,
+          "command": "git status --short"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-hEauF9/tmp/qc-qBCQGs/host/runtime/bin/gstack-review-log '{\"skill\":\"review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"issues_found\",\"issues_found\":0,\"critical\":0,\"informational\":0,\"quality_score\":10,\"specialists\":{\"state-machines\":{\"dispatched\":true,\"findings\":0,\"critical\":0,\"informational\":0},\"red-team\":{\"dispatched\":false,\"reason\":\"scope\"}},\"findings\":[],\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\",\"via\":\"ship\",\"completed\":false,\"converged\":false,\"cycles\":0,\"pass\":1,\"review_scope\":\"frozen\",\"range_base\":null}' --finish bbf15eec-7962-4aee-bcfd-88233b0375fe"
+        }
+      ]
+    },
+    "40737741454-rerun-1": {
+      "root": "/home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK",
+      "mergeBase": "0f7b81c",
+      "commands": [
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-qa-deadline start /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports/deadline.json 300 2026-10-28T18:18:29.666Z"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports 001 --public --deadline /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports/deadline.json -- bun scripts/probe.ts 3"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports 002 --public --deadline /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports/deadline.json --after 001 --hypothesis 'Success path blocked by missing vendor/native-engine.ts; check whether the riskiest changed edge (out-of-range 10) is equally blocked before reaching scale().' -- bun scripts/probe.ts 10"
+        },
+        {
+          "parent": false,
+          "command": "bun run test"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-review-plan --base main"
+        },
+        {
+          "parent": true,
+          "command": "git diff 0f7b81c"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-qa-evidence materialize /home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/product/reports annotations.json"
+        },
+        {
+          "parent": false,
+          "command": "git status --short"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-2u70Ma/tmp/qc-lV9GKK/host/runtime/bin/gstack-review-log '{\"skill\":\"review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"issues_found\",\"issues_found\":0,\"critical\":0,\"informational\":0,\"quality_score\":10,\"specialists\":{\"state-machines\":{\"dispatched\":true,\"findings\":0,\"critical\":0,\"informational\":0},\"testing\":{\"dispatched\":false,\"reason\":\"scope\"},\"maintainability\":{\"dispatched\":false,\"reason\":\"scope\"},\"red-team\":{\"dispatched\":false,\"reason\":\"scope\"}},\"findings\":[],\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\",\"via\":\"ship\",\"completed\":false,\"converged\":false,\"cycles\":0,\"pass\":1,\"review_scope\":\"frozen\",\"range_base\":null}' --finish 4b1c9f3b-d67b-4919-8237-21634b5b4c0b"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "source": "Paid screen 40707142223 (#3544 head) ship-exploratory-plan-checks: paid-slice-10-a1 and paid-rerun-1-a1 native-events.json, every Bash command in order (parent and child); late-input receipt from train 35 rebuild gate 40664336141 paid-slice-9-a1",
+  "runs": {
+    "40707142223-slice-10": {
+      "root": "/home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE",
+      "commands": [
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-deadline start /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports/deadline.json 300 2026-10-28T14:53:05.952Z"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports 001 --public --deadline /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports/deadline.json -- bun scripts/probe.ts 4"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-deadline status /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports/deadline.json"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports 002 --public --deadline /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports/deadline.json --after 001 --hypothesis 'Success holds for 4; riskiest changed edge is just past the upper bound, so 10 must exit 2 with the exact stderr message.' -- bun scripts/probe.ts 10"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports 003 --public --timeout-ms 10000 --after 002 --hypothesis 'Rejection of 10 holds; PLAN.md requires the upper boundary check: 9 must exit 0 with stdout 18 and empty stderr.' -- bun scripts/probe.ts 9"
+        },
+        {
+          "parent": false,
+          "command": "bun run test"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-qa-evidence materialize /home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/product/reports annotations.json"
+        },
+        {
+          "parent": false,
+          "command": "if GATE_OUT=$(/home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-gate-diff main 2>&1); then\n  printf '%s\\n' \"$GATE_OUT\"\nelse\n  GATE_EXIT=$?; printf '%s\\n' \"$GATE_OUT\"\n  case \"$GATE_EXIT\" in\n    2) echo \"Gate integrity: UNAVAILABLE \u2014 $(printf '%s\\n' \"$GATE_OUT\" | grep -m1 '^GATE_ERROR=')\" ;;\n    *) echo \"Gate integrity: UNAVAILABLE \u2014 helper exit $GATE_EXIT (stale install? run /gstack-upgrade)\" ;;\n  esac\nfi"
+        },
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-review-plan --base main"
+        },
+        {
+          "parent": true,
+          "command": "git diff origin/main"
+        },
+        {
+          "parent": false,
+          "command": "git status --short"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-T57Isu/tmp/qc-9kHKwE/host/runtime/bin/gstack-review-log '{\"skill\":\"review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"clean\",\"issues_found\":0,\"critical\":0,\"informational\":0,\"quality_score\":10.0,\"specialists\":{\"state-machines\":{\"dispatched\":true,\"findings\":0,\"critical\":0,\"informational\":0},\"red-team\":{\"dispatched\":false,\"reason\":\"scope\"}},\"findings\":[],\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\",\"via\":\"ship\",\"completed\":true,\"converged\":true,\"cycles\":0,\"pass\":1,\"review_scope\":\"frozen\",\"range_base\":null}' --finish 5534d8f6-4d67-4b6f-b691-c6e83c659df2"
+        },
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        }
+      ]
+    },
+    "40707142223-rerun-1": {
+      "root": "/home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP",
+      "commands": [
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-qa-deadline start /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports/deadline.json 300 2026-10-28T15:06:29.695Z"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports 001 --public --deadline /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports/deadline.json -- bun scripts/probe.ts 9"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-qa-evidence capture /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports 002 --public --deadline /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports/deadline.json --after 001 --hypothesis 'Range rule: 10 breaks only the 0..9 bound; changed return path must not alter rejection (exit 2, exact stderr, empty stdout).' -- bun scripts/probe.ts 10"
+        },
+        {
+          "parent": false,
+          "command": "bun run test"
+        },
+        {
+          "parent": false,
+          "command": "if GATE_OUT=$(/home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-gate-diff main 2>&1); then\n  printf '%s\\n' \"$GATE_OUT\"\nelse\n  GATE_EXIT=$?; printf '%s\\n' \"$GATE_OUT\"\n  case \"$GATE_EXIT\" in\n    2) echo \"Gate integrity: UNAVAILABLE \u2014 $(printf '%s\\n' \"$GATE_OUT\" | grep -m1 '^GATE_ERROR=')\" ;;\n    *) echo \"Gate integrity: UNAVAILABLE \u2014 helper exit $GATE_EXIT (stale install? run /gstack-upgrade)\" ;;\n  esac\nfi"
+        },
+        {
+          "parent": false,
+          "command": "bun /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-qa-evidence materialize /home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/product/reports annotations.json"
+        },
+        {
+          "parent": false,
+          "command": "git status --short"
+        },
+        {
+          "parent": false,
+          "command": "date -u +%Y-%m-%dT%H:%M:%SZ"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-review-plan --base main"
+        },
+        {
+          "parent": true,
+          "command": "git diff origin/main"
+        },
+        {
+          "parent": false,
+          "command": "/home/runner/.cache/gstack-paid-shard-pi2bIV/tmp/qc-kMsNBP/host/runtime/bin/gstack-review-log '{\"skill\":\"review\",\"timestamp\":\"'\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"'\",\"status\":\"clean\",\"issues_found\":0,\"critical\":0,\"informational\":0,\"quality_score\":10.0,\"specialists\":{\"state-machines\":{\"dispatched\":true,\"findings\":0,\"critical\":0,\"informational\":0}},\"findings\":[],\"commit\":\"'\"$(git rev-parse --short HEAD)\"'\",\"via\":\"ship\",\"completed\":true,\"converged\":true,\"cycles\":0,\"pass\":1,\"review_scope\":\"frozen\",\"range_base\":null}' --finish 94e80914-bf02-4c55-84a9-a9ea9e1adbac"
+        },
+        {
+          "parent": false,
+          "command": "git status --short"
+        }
+      ]
+    }
+  },
+  "lateInputReceipt": {
+    "status": "pass",
+    "probes": [
+      "probe-1cd02598-4151-4346-9556-b245a37e9a44",
+      "probe-11857dac-c540-41de-8e13-ca6181ec88fc",
+      "probe-a8572671-a2ec-4b2d-b5bb-aee043898de1"
+    ],
+    "remaining": [
+      "Step 11 native adversarial review (not dispatched)",
+      "review record completed:false"
+    ]
+  }
+}
