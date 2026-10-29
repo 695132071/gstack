@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { buildPage, cleanText, diffLines, hunks, pathSides, resolveCommit } from '../lib/pr-shots';
+import { wtreeFingerprint } from '../lib/script-invocation';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 const dirs: string[] = [];
@@ -118,6 +119,26 @@ describe('gstack-pr-shots CLI', () => {
     expect(r.out).toMatch(/^SHOT_PNG: (unavailable \(|.*pair\.png engine=)/m);
     const text = fs.readFileSync(r.out.match(/^SHOT_TEXT: (.+)$/m)![1]!, 'utf8');
     expect(text).toStartWith('<details><summary>Before/after as text: The record renders as a table</summary>');
+  });
+
+  // #3560: pr-shots starts the browse daemon from the worktree; the daemon's state-dir setup
+  // appended .gstack/ to the tracked .gitignore in a repository that tracks .gstack/ config, so the
+  // tree changed after pregate and the /ship receipt refused with PREGATE_STALE. The stub browse
+  // runs the daemon's real state-dir setup (browse/src/config.ts), then fails like a browser-less host.
+  test.skipIf(process.platform === 'win32')('the working-tree fingerprint is unchanged after a run that starts browse (#3560)', () => {
+    const { dir } = repo({ '.gitignore': 'node_modules/\n.gstack/tmp/\n', '.gstack/pregate.json': '{}\n', 'doc.md': '# Doc\n\nold\n' });
+    fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\nnew\n');
+    const stubDir = tmp('shots-browse-');
+    fs.writeFileSync(path.join(stubDir, 'state-dir.ts'), `import { ensureStateDir, resolveConfig } from ${JSON.stringify(path.join(ROOT, 'browse/src/config.ts'))};\nensureStateDir(resolveConfig());\nprocess.exit(1);\n`);
+    const browse = path.join(stubDir, 'browse');
+    fs.writeFileSync(browse, `#!/usr/bin/env bash\nexec ${JSON.stringify(process.execPath)} --no-env-file --config=/dev/null ${JSON.stringify(path.join(stubDir, 'state-dir.ts'))}\n`, { mode: 0o755 });
+    const before = wtreeFingerprint({ cwd: dir });
+    expect('tree' in before).toBe(true);
+    const r = cli(['--path', 'doc.md', '--caption', 'c'], dir, { GSTACK_STATE_ROOT: tmp('shots-state-'), GSTACK_BROWSE_BIN: browse, BROWSE_STATE_FILE: '' });
+    expect(r.out).toMatch(/^SHOT_PNG: failed /m);
+    expect(fs.existsSync(path.join(dir, '.gstack', '.gitignore'))).toBe(true);
+    expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.gstack/tmp/\n');
+    expect(wtreeFingerprint({ cwd: dir })).toEqual(before);
   });
 
   test('a secret in a capture is refused before anything is written, without echoing it', () => {

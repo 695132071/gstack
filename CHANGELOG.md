@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.91.303.0] - 2026-10-29
+
+**`gstack-pr-shots` no longer edits your `.gitignore` in the middle of /ship, so the pregate stays fresh and the ship receipt gets written.** When a repository tracks files under `.gstack/` (`pregate.json`, `ship-policy.json`), git does not read `.gstack/` as ignored, and the browse daemon that `gstack-pr-shots` starts appended `.gstack/` to the tracked `.gitignore`. The tree changed after pregate and the receipt writer refused with PREGATE_STALE (#3560, seen on gstack-evals#13).
+
+### Fixed
+- **`browse/src/config.ts`**: the browse state dir still writes its own `.gstack/.gitignore` (`*`), and when git does not already ignore `.gstack/` the line goes to the repository's `info/exclude` (resolved with `git rev-parse --git-path`, so linked worktrees share it). The project's `.gitignore` is never written. Outside a git repository nothing is written beyond the state dir.
+
+### Tests
+- `test/pr-shots.test.ts`: a repository that tracks `.gstack/pregate.json` runs `gstack-pr-shots` with a browse stub that runs the daemon's real state-dir setup; the `gstack-wtree` fingerprint and the `.gitignore` are unchanged afterwards. It failed before this change.
+- `browse/test/config.test.ts`: the cases that pinned the `.gitignore` append now pin `info/exclude`: written once, no duplicate, a missing trailing newline added, `info/` created when absent, a warning in `browse-server.log` when it cannot be written, and nothing written outside a repository.
+
 ## [1.91.302.0] - 2026-10-29
 
 **Three flaky gate cases from the 2026-10-28 daily flaky pass are repaired: shared-libs-review-index-flags, ship-exploratory-late-input (with ship-exploratory-plan-checks, which failed the same way), and the real-Chromium cookie-auth positive case.** Each red was diagnosed from its captured run before the fix, and each repair has a free test that fails without it.

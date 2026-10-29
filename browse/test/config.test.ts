@@ -95,68 +95,72 @@ describe('config', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    test('adds .gstack/ to .gitignore if not present', () => {
-      const tmpDir = path.join(os.tmpdir(), `browse-gitignore-test-${Date.now()}`);
-      fs.mkdirSync(tmpDir, { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n');
+    // A repository that tracks files under .gstack/ (pregate.json, ship-policy.json) is the case
+    // where git does not already read .gstack/ as ignored, so the ignore line must land somewhere.
+    const trackedGstackRepo = (prefix: string) => {
+      const { spawnSync } = require('child_process');
+      const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+      const git = (...args: string[]) => spawnSync('git', args, { cwd: tmpDir, timeout: 30_000, encoding: 'utf-8' });
+      git('init', '-q');
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n.gstack/tmp/\n');
+      fs.mkdirSync(path.join(tmpDir, '.gstack'));
+      fs.writeFileSync(path.join(tmpDir, '.gstack', 'pregate.json'), '{}\n');
+      git('add', '-A');
+      git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+      const exclude = path.resolve(tmpDir, git('rev-parse', '--git-path', 'info/exclude').stdout.trim());
+      return { tmpDir, git, exclude };
+    };
+
+    test('records .gstack/ in .git/info/exclude and leaves the tracked .gitignore unchanged (#3560)', () => {
+      const { tmpDir, git, exclude } = trackedGstackRepo('browse-exclude-test-');
+      fs.writeFileSync(exclude, '# local\n');
       const config = resolveConfig({ BROWSE_STATE_FILE: path.join(tmpDir, '.gstack', 'browse.json') });
       ensureStateDir(config);
-      const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-      expect(content).toContain('.gstack/');
-      expect(content).toBe('node_modules/\n.gstack/\n');
+      expect(fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8')).toBe('node_modules/\n.gstack/tmp/\n');
+      expect(fs.readFileSync(exclude, 'utf-8')).toBe('# local\n.gstack/\n');
+      expect(git('status', '--porcelain').stdout).toBe('');
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    test('does not duplicate .gstack/ in .gitignore', () => {
-      const tmpDir = path.join(os.tmpdir(), `browse-gitignore-test-${Date.now()}`);
-      fs.mkdirSync(tmpDir, { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n.gstack/\n');
-      const config = resolveConfig({ BROWSE_STATE_FILE: path.join(tmpDir, '.gstack', 'browse.json') });
+    test('does not duplicate .gstack/ in info/exclude, adds a missing trailing newline, and creates info/ when absent', () => {
+      const dup = trackedGstackRepo('browse-exclude-dup-');
+      fs.writeFileSync(dup.exclude, 'build/');
+      const config = resolveConfig({ BROWSE_STATE_FILE: path.join(dup.tmpDir, '.gstack', 'browse.json') });
       ensureStateDir(config);
-      const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-      expect(content).toBe('node_modules/\n.gstack/\n');
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      ensureStateDir(config);
+      expect(fs.readFileSync(dup.exclude, 'utf-8')).toBe('build/\n.gstack/\n');
+      fs.rmSync(dup.tmpDir, { recursive: true, force: true });
+
+      const bare = trackedGstackRepo('browse-exclude-noinfo-');
+      fs.rmSync(path.dirname(bare.exclude), { recursive: true, force: true });
+      ensureStateDir(resolveConfig({ BROWSE_STATE_FILE: path.join(bare.tmpDir, '.gstack', 'browse.json') }));
+      expect(fs.readFileSync(bare.exclude, 'utf-8')).toBe('.gstack/\n');
+      fs.rmSync(bare.tmpDir, { recursive: true, force: true });
     });
 
-    test('handles .gitignore without trailing newline', () => {
-      const tmpDir = path.join(os.tmpdir(), `browse-gitignore-test-${Date.now()}`);
-      fs.mkdirSync(tmpDir, { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules');
-      const config = resolveConfig({ BROWSE_STATE_FILE: path.join(tmpDir, '.gstack', 'browse.json') });
-      ensureStateDir(config);
-      const content = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-      expect(content).toBe('node_modules\n.gstack/\n');
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    });
-
-    test('logs warning to browse-server.log on non-ENOENT gitignore error', () => {
+    test('logs warning to browse-server.log when info/exclude cannot be written', () => {
       if (!canRevokeWrites()) return; // chmod is advisory here (win32, root, DAC-override containers)
-      const tmpDir = path.join(os.tmpdir(), `browse-gitignore-test-${Date.now()}`);
-      fs.mkdirSync(tmpDir, { recursive: true });
-      // Create a read-only .gitignore (no .gstack/ entry → would try to append)
-      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n');
-      fs.chmodSync(path.join(tmpDir, '.gitignore'), 0o444);
+      const { tmpDir, exclude } = trackedGstackRepo('browse-exclude-ro-');
+      fs.writeFileSync(exclude, '# local\n');
+      fs.chmodSync(exclude, 0o444);
       const config = resolveConfig({ BROWSE_STATE_FILE: path.join(tmpDir, '.gstack', 'browse.json') });
       ensureStateDir(config); // should not throw
-      // Verify warning was written to server log
-      const logPath = path.join(config.stateDir, 'browse-server.log');
-      expect(fs.existsSync(logPath)).toBe(true);
-      const logContent = fs.readFileSync(logPath, 'utf-8');
-      expect(logContent).toContain('Warning: could not update .gitignore');
-      // .gitignore should remain unchanged
-      const gitignoreContent = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
-      expect(gitignoreContent).toBe('node_modules/\n');
-      // Cleanup
-      fs.chmodSync(path.join(tmpDir, '.gitignore'), 0o644);
+      const logContent = fs.readFileSync(path.join(config.stateDir, 'browse-server.log'), 'utf-8');
+      expect(logContent).toContain(`Warning: could not update ${exclude}`);
+      expect(fs.readFileSync(exclude, 'utf-8')).toBe('# local\n');
+      expect(fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8')).toBe('node_modules/\n.gstack/tmp/\n');
+      fs.chmodSync(exclude, 0o644);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    test('skips if no .gitignore exists', () => {
+    test('outside a git repository nothing is written beyond the state dir', () => {
       const tmpDir = path.join(os.tmpdir(), `browse-gitignore-test-${Date.now()}`);
       fs.mkdirSync(tmpDir, { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules/\n');
       const config = resolveConfig({ BROWSE_STATE_FILE: path.join(tmpDir, '.gstack', 'browse.json') });
       ensureStateDir(config);
-      expect(fs.existsSync(path.join(tmpDir, '.gitignore'))).toBe(false);
+      expect(fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8')).toBe('node_modules/\n');
+      expect(fs.readdirSync(tmpDir).sort()).toEqual(['.gitignore', '.gstack']);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
