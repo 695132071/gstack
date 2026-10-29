@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.91.312.0] - 2026-10-29
+
+**An install check run from inside /ship no longer upgrades gstack under it.** /ship's docs step runs `scripts/install.sh --for document-release`. That run fast-forwarded the checkout from 1.91.298 to 1.91.299 in the middle of a lane's /ship, so the receipt writer's rules changed partway through the run (#3571).
+
+### Fixed
+- **`bin/gstack-capy-session`**: in install mode, a live workflow lease under 120 minutes old held by the caller's own process chain now skips the self-upgrade: `SELF_UPGRADE: skipped (a gstack run in this session holds a workflow lease on this installation: pid <p> (<age>m <command>), so the upgrade waits until the lease is 120 minutes old; …(UPGRADE_BUSY))`. The install still certifies the installed revision and the trailer stays ok with `behind=`. `bin/gstack-upgrade` deliberately ignores the caller's own lease, and an install started from inside the run passed that check. Each `gstack-skill-start` renews the lease. The age bound matters on Capy, where the leased pid is the machine's long-lived `capy-server`, so a lease is never released by its process exiting. An older lease, or none, upgrades as before, and `GSTACK_UPGRADE_FORCE=1` or a hand-run `bin/gstack-upgrade` still moves the checkout.
+
+### Tests
+- `test/capy-skill-wrapper.test.ts`: an install run under a shell that holds a fresh lease leaves HEAD where it was and stays ok. Once that lease is 121 minutes old, with its holder still alive, the same install upgrades. Before this change the first run printed `SELF_UPGRADE: done 1.0.1 -> 1.0.2`.
+
 ## [1.91.311.0] - 2026-10-29
 
 **A sealed policy can now refuse `sealed/<set>/tasks.json` while allowing the `MANIFEST.json` beside it, and can catch `HELDOUT/` with a `heldout` glob.** The sealed guard only had deny globs and one-commit waivers, so the gstack-evals layout, which keeps a public manifest of hashes and counts next to its sealed tasks, needed a fresh `.gstack/sealed-allow.tsv` line for every manifest commit (gstack-evals wiki/board/2026-10-28-gsta-9-sealed-manifest-glob-gap.md). Their first draft also wrote `sealed/**`, which never matched their nested `tasks/<id>/sealed/` directories, and garrytan/gstack-evals#3 (dc54796) hand-listed `Sealed/`, `HELDOUT/` and other case variants.
