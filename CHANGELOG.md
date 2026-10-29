@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.91.304.0] - 2026-10-29
+
+**Running the Capy installer for a second workflow on the same machine no longer takes away the first one's admission.** /ship's docs step runs `scripts/install.sh --for document-release`, and that run replaced the `--for ship` install verdict with its narrower one, so the rest of /ship refused with "the install verdict certified for=document-release, which does not cover codex that ship needs" until someone reran `--for ship` (#3561, seen on gstack-evals#13).
+
+### Fixed
+- **`bin/gstack-capy-install`**: an ok run keeps what an earlier ok install certified for the same checkout, project, HEAD and Bun. The verdict's `required` list becomes the union, pins count as planning-only only when both runs skipped them, and `for` lists every workflow (`for=ship,document-release`). The installer says so in one line. A failing run, a new HEAD or another Bun still replaces the verdict, and the review-voice profile still never narrows a fuller one.
+
+### Tests
+- `test/gstack-capy-install.test.ts`: `--for ship` then `--for document-release` leaves one ok verdict that admits both workflows through `verdictProblem`; a `--check --for ship` keeps it; after a new commit, `--for document-release` replaces it and ship is refused again. It failed before this change.
+
 ## [1.91.303.0] - 2026-10-29
 
 **`gstack-pr-shots` no longer edits your `.gitignore` in the middle of /ship, so the pregate stays fresh and the ship receipt gets written.** When a repository tracks files under `.gstack/` (`pregate.json`, `ship-policy.json`), git does not read `.gstack/` as ignored, and the browse daemon that `gstack-pr-shots` starts appended `.gstack/` to the tracked `.gitignore`. The tree changed after pregate and the receipt writer refused with PREGATE_STALE (#3560, seen on gstack-evals#13).
