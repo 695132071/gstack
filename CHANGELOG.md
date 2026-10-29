@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.91.306.0] - 2026-10-29
+
+**A /ship receipt now survives a base merge that only regenerates outputs, and a rebase onto the tree it reviewed.** On gstack-evals, two full /ship reruns came from a merge of main that changed a generated file's diff (U1 paid about 28M tokens for its rerun), and one came from a rebase whose tree was byte-identical to the reviewed one (about 60M). Each re-reviewed code the receipt already covered. For crews the rule is now a single line. Merge main into a reviewed branch, and never rebase it.
+
+### Changed
+- **`gstack-ship-receipt carry`**: an output of an entry with a `command` in origin/<base>'s `.gstack/generated.json` counts as `generated`, not product, when the `--pregate` result for HEAD lists it under the `regen` check's new `proven` paths and that check ran the same base registry. Without that evidence, for a file that matches an output glob but that the command never writes, and for an entry with no command or one only the branch registers, the output stays product.
+- **`gstack-pregate` `regen` check**: a fresh entry with touched outputs runs its command a second time in the scratch worktree with those outputs deleted, and records the ones it recreates byte-identically as `proven`. The verdict still comes from the first run, so a generator that reads its own output passes as before and proves nothing.
+- **Carry across rewritten history**: `write` records `head_tree` and `product_patch_id`, and each carry rebinds both and keeps earlier trees in `carry.trees`. A head that is no longer an ancestor carries only when its tree is one the receipt covers and its product patch-id against the current base matches; it records `carry.ancestry: rewritten` and needs no old commit, so a fresh clone carries too. A different tree is the new `RECEIPT_CARRY_TREE_MISMATCH`. The reviewed tree on a base that moved under it is `RECEIPT_CARRY_PRODUCT_CHANGED`.
+- **Docs**: docs/ship-policy.md#receipt-carry opens with a four-row table: merge with the product unchanged, merge that changes product, rebase onto a covered tree, and any other rebase. docs/captain.md and captain/templates/CREW.md say to merge main in and never rebase a reviewed branch, and the troubleshooting entries for the carry refusals match the new rules.
+
+### Tests
+- `test/ship-receipt-carry-rewrite.test.ts`: a rebase onto the covered tree carries from a fresh clone that never fetched the old head, a different tree refuses with `RECEIPT_CARRY_TREE_MISMATCH`, the reviewed tree on a moved base refuses, and a merge that changes only a registered output's diff carries with a pregate whose regen check proved it and refuses without one or with a pregate from another registry, and a hand-written file under an output glob that the generator never writes stays product.
+- `test/gstack-ship-receipt.test.ts`: the written receipt's key order includes `head_tree` and `product_patch_id`.
+
 ## [1.91.305.0] - 2026-10-29
 
 **You can now render gstack with whole skills, skill sections, model overlays or preamble pieces left out, as a byte-exact tree with a lock file, so an eval can measure which instructions a model actually needs.** Garry asked for "95% of the outcome but with 50% of the token use", and the free ceiling measurement on train gate run 40705984271 found skill text is about 21% of billed eval cost (35 of 103 tests), so trimming it per model is worth measuring. Nothing changes for anyone today. Every model rung and unknown models load `full`, and the committed SKILL.md files are byte-identical to the previous release. A smaller loadout ships only after GSTA-2 measures it.

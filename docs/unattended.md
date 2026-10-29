@@ -225,9 +225,10 @@ and reruns carry with `--pregate .gstack/tmp/pregate.json`. `CARRY: carried from
 now names HEAD with a `carry` object holding the `git range-diff` evidence, and
 `ship-run.json` gains `carried_from` and `carry_reason`; the `review_loop`
 counters are kept, because the reviewed product diff is unchanged. `CARRY:
-current` means nothing moved. `CARRY: refused (RECEIPT_CARRY_PRODUCT_CHANGED)`
-or `(RECEIPT_CARRY_REFUSED)` with the refused result line means the product
-diff changed or the reviewed head left HEAD's history, so /ship runs again;
+current` means nothing moved. `CARRY: refused (RECEIPT_CARRY_PRODUCT_CHANGED)`,
+`(RECEIPT_CARRY_TREE_MISMATCH)` or `(RECEIPT_CARRY_REFUSED)` with the refused
+result line means the product diff changed, or history was rewritten onto a
+tree no review saw, so /ship runs again;
 `(RECEIPT_GIT_TOO_OLD)` means the machine's git predates 2.39 and cannot run
 `patch-id --verbatim` ([ship-policy.md](ship-policy.md#receipt-carry)).
 

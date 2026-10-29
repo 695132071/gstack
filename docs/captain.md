@@ -231,6 +231,14 @@ a push included. The sequence that works unattended on Capy:
 10. After the slot call, the stamp commit keeps the pin's receipt; re-READY with the same
     receipt, no second /ship.
 
+When the base moves under a reviewed branch, merge it in; never rebase. A merge that
+leaves the product diff unchanged carries the receipt with `gstack-ship-receipt carry`
+(pregate at HEAD, no review rerun), and a merge whose resolution changed product code
+needs a fresh /ship. A rebase carries only onto a tree the receipt already covers with
+the same product diff; any other rebase is a full /ship
+([ship-policy.md](ship-policy.md#receipt-carry)). A controller never asks a lane to
+rebase a reviewed branch.
+
 ## Merge trains
 
 gstack's queue tool drives trains when the repository's `.gstack/ship-policy.json` carries

@@ -146,7 +146,12 @@ Two stages with separate clocks, both printed:
 ~2.5 s for `regen` and under 200 ms for each of the others):
 
 - `regen`: every registry entry whose inputs or outputs are touched is fresh
-  (`gstack-regen check` in a scratch worktree).
+  (`gstack-regen check` in a scratch worktree). A fresh entry with touched
+  outputs then runs once more with those outputs deleted; the ones the command
+  recreates byte-identically are the check's `proven` paths, which
+  `gstack-ship-receipt carry` reads. The verdict comes from the first run: an
+  output the second run does not recreate, or a second run that fails, is
+  simply not proven.
 - `secrets`: `gstack-redact` over the branch's added lines (merge-base to the
   working tree, untracked files included). HIGH, or MEDIUM in the `secret`
   category, fails; other MEDIUM findings warn. Cannot be downgraded.

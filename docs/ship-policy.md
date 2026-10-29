@@ -777,7 +777,8 @@ written by the pr-body section of `/ship` after the body is composed.
 
 The ```` ```gstack-ship-receipt ```` block is the handoff record: identifiers
 first (`pr`, `head`, `version`, `base`), then the evidence (`gate`, `ci`,
-`pregate`, `issues`, `approval`, `docs`, `review_loop`, `carry`), validated
+`head_tree`, `product_patch_id`, `pregate`, `issues`, `approval`, `docs`,
+`review_loop`, `carry`), validated
 against the `ship-receipt` schema (`gstack-artifact schema ship-receipt`) and
 read back by `gstack-ship-receipt read`, `result`, `carry` and the queue.
 
@@ -891,6 +892,16 @@ line, and the codes a refusal ends with are
 <a id="receipt-carry"></a>
 ## Carrying a receipt across a base merge or a test-only fix
 
+**Merge main into a reviewed branch; never rebase it.** What happens to the
+receipt when the base moves:
+
+| What changed since /ship | The receipt |
+|---|---|
+| a merge of the base, product diff unchanged (tests, release metadata, registered outputs the pregate's regen check proved) | carries; no review reruns |
+| a merge of the base whose resolution changed product code | a fresh /ship (`RECEIPT_CARRY_PRODUCT_CHANGED`) |
+| a rebase or force-push onto a tree the receipt covers, product diff against the new base unchanged | carries (`carry.ancestry: rewritten`) |
+| any other rebase or force-push | a fresh /ship (`RECEIPT_CARRY_TREE_MISMATCH`) |
+
 Since the release that added `review_scope`. A `/ship` receipt names the head it
 reviewed, so a conflict-only merge of the base or a test-only fix used to
 invalidate it and cost a full re-run on identical product code.
@@ -921,11 +932,22 @@ newer tentative one the stamp moved (a `*_KEY_VERSION` written as the next
 minor, #3512; a version older than the old one or of another width is a hand
 edit). A logic change in a
 stamped source file is product. Lockfiles are product unless the policy names
-them. A base merge contributes no product
-change of its own. A receipt carried twice keeps the reviewed head as
+them. An output of an entry with a `command` in origin/<base>'s
+`.gstack/generated.json` is `generated`, not product, only when the
+`--pregate` result passed for HEAD lists it under the `regen` check's
+`proven` paths (the check deleted the touched output in its scratch worktree
+and the command recreated it byte-identically) and that check ran the same
+registry, origin/<base> at the commit the carry reads. A file that matches an
+output glob but that the command never writes is not proven. Without that
+evidence, or for an entry with no command or one only the branch registers,
+the output is product (U1 on gstack-evals paid a
+full rerun because a merge changed its generated index's diff). A base merge
+contributes no product change of its own. A receipt carried twice keeps the reviewed head as
 `carry.from` and adds up the merges and paths. The carried receipt records
 `carry: { from, reason, product_patch_id, changed_paths, merge_commits,
-range_diff, covers, reruns }` with the `git range-diff` evidence, prints
+range_diff, covers, reruns, ancestry, trees }` (`ancestry` is `linear`
+along the receipt's own history, `rewritten` once any hop was a rebase;
+`trees` lists the earlier covered trees) with the `git range-diff` evidence, prints
 `CARRY: carried from <old> to <new> (<reason>)` and the `GSTACK_RESULT:
 skill=ship status=complete` line, and its summary line ends with
 `carried_from=<old12>`. `CARRY: current` means the receipt already names HEAD;
@@ -933,10 +955,25 @@ skill=ship status=complete` line, and its summary line ends with
 
 A changed product path, or a product patch-id that differs, is
 [`RECEIPT_CARRY_PRODUCT_CHANGED`](troubleshooting.md#receipt-carry-product-changed)
-(exit 3; the refusal names the paths), and a receipt whose head is not in HEAD's
-history (a rebase or force-push) or a working tree with uncommitted changes is
-[`RECEIPT_CARRY_REFUSED`](troubleshooting.md#receipt-carry-refused): run `/ship`
-on the new head. The queue's `ready`, `train build` and `verify --train` read the
+(exit 3; the refusal names the paths), and a working tree with uncommitted
+changes is [`RECEIPT_CARRY_REFUSED`](troubleshooting.md#receipt-carry-refused).
+
+**Rewritten history.** `write` records `head_tree` (the reviewed head's tree)
+and `product_patch_id` (its product patch against the base), and every carry
+rebinds both to the new head and keeps the earlier trees in `carry.trees`.
+When the receipt's head is no longer in HEAD's history, the carry follows only
+when HEAD's tree is one of those trees and HEAD's product patch-id against the
+current base equals the recorded one; it records `carry.ancestry: rewritten`
+and `range_diff: tree-equal`, and needs neither the old commit nor its
+history, so a fresh clone carries too. The tree alone is not enough: a stacked
+branch rebased onto main after its base closed unmerged keeps its tree while
+its diff grows by the base's code, and that is `RECEIPT_CARRY_PRODUCT_CHANGED`.
+Any other tree is
+[`RECEIPT_CARRY_TREE_MISMATCH`](troubleshooting.md#receipt-carry-tree-mismatch),
+which names HEAD's tree and the covered trees. A receipt from before
+`head_tree` existed, whose head is not in this clone, is
+`RECEIPT_CARRY_REFUSED`: run `/ship` on the new head. A refusal never
+rewrites the body. The queue's `ready`, `train build` and `verify --train` read the
 carried receipt like any other.
 
 **Delta /ship: eligibility, then checks, then publication.** `/ship` Step 1 runs

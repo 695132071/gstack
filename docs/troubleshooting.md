@@ -4694,29 +4694,49 @@ rebased; /ship's own rule is to merge the base in, never rebase a reviewed head.
 ### `RECEIPT_CARRY_REFUSED`
 
 **Meaning.** `gstack-ship-receipt carry` could not carry the PR's /ship receipt
-to HEAD: the PR body has no valid receipt, the receipt's head is not an ancestor
-of HEAD (a rebase or force-push dropped it), the working tree has uncommitted
-or untracked changes (a carry certifies a commit, never a tree that differs from
-it), or git could not compare the two product diffs or read the working tree's
-status. The receipt in the body is unchanged and still names the old head, so
-`gstack-ship-queue ready` refuses `QUEUE_RECEIPT_STALE`.
+to HEAD: the PR body has no valid receipt, the working tree has uncommitted or
+untracked changes (a carry certifies a commit, never a tree that differs from
+it), the receipt's head left HEAD's history and the receipt records no tree to
+compare (a receipt written before `head_tree`, whose head is not in this
+clone), or git could not compare the two product diffs or read the working
+tree's status. The receipt in the body is unchanged and still names the old
+head, so `gstack-ship-queue ready` refuses `QUEUE_RECEIPT_STALE`.
 
-**Fix.** Keep the reviewed head in HEAD's history (merge the base in instead of
-rebasing), commit or stash every working-tree change, then rerun
+**Fix.** Commit or stash every working-tree change, then rerun
 `gstack-ship-receipt carry --pr <n>` at the new head. When the history is
-already rewritten, run /ship on the new head.
+already rewritten and the receipt predates `head_tree`, run /ship on the new
+head; next time merge the base in instead of rebasing.
+
+<a id="receipt-carry-tree-mismatch"></a>
+### `RECEIPT_CARRY_TREE_MISMATCH`
+
+**Meaning.** The branch was rebased or force-pushed after /ship, so the
+receipt's head is no longer in HEAD's history, and HEAD's tree is not a tree
+the receipt covers (its `head_tree` or a tree in `carry.trees`). No review saw
+this code. The refusal names HEAD's tree and the covered trees; the body is
+unchanged.
+
+**Fix.** Run /ship on the new head. A rebase carries only onto a reviewed tree
+whose product diff against the new base is unchanged; merging the base in
+instead keeps every later carry available
+([ship-policy.md](ship-policy.md#receipt-carry)).
 
 <a id="receipt-carry-product-changed"></a>
 ### `RECEIPT_CARRY_PRODUCT_CHANGED`
 
 **Meaning.** Between the receipt's head and HEAD the product diff against the
-base changed: at least one path that is neither a test, release metadata nor
-part of the base merge has a different patch than the reviewed head had. The
-reviewed verdict does not cover HEAD, so the receipt is not carried. The
-refusal names the changed product paths.
+base changed: at least one path that is neither a test, release metadata, a
+registered output the pregate's regen check proved (listed under `proven`,
+checked against the same base registry), nor part of the base merge has
+a different patch than the reviewed head had. After a rebase it means HEAD has
+the reviewed tree but the base moved under it, so the diff a reviewer would see
+is not the reviewed one. The reviewed verdict does not cover HEAD, so the
+receipt is not carried. The refusal names the changed product paths.
 
 **Fix.** Run /ship on the new head. The receipt carries only across a
-conflict-only base merge, a test-only change or release metadata, which the
+conflict-only base merge, a test-only change, release metadata, a registered
+output the pregate's regen check proved, or a rebase onto a covered tree with
+the recorded product diff, which the
 `carry` object in the carried receipt records with the product patch-id and
 the range-diff evidence ([unattended.md](unattended.md#the-terminal-line)).
 
