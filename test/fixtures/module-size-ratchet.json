@@ -1,5 +1,8 @@
 {
   "newModules": [
+    { "file": "scripts/modules.ts", "movedFrom": "(new: module loadouts catalog and selection, GSTA-140)" },
+    { "file": "scripts/modules-render.ts", "movedFrom": "(new: module loadout render and lock, GSTA-140)" },
+    { "file": "scripts/modules-cli.ts", "movedFrom": "(new: bin/gstack-modules CLI, GSTA-140)" },
     { "file": "lib/harness-register.ts", "movedFrom": "(new: gstack-harness registrar, GSTA-135)" },
     { "file": "lib/harness-qm.ts", "movedFrom": "(new: gstack-harness QM skill-pack target, GSTA-135)" },
     { "file": "lib/design-lint/render.ts", "movedFrom": "(new: the bundled design lint, GSTA-105; ported from hallmark sloplint.mjs)" },

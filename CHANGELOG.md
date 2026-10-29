@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.91.305.0] - 2026-10-29
+
+**You can now render gstack with whole skills, skill sections, model overlays or preamble pieces left out, as a byte-exact tree with a lock file, so an eval can measure which instructions a model actually needs.** Garry asked for "95% of the outcome but with 50% of the token use", and the free ceiling measurement on train gate run 40705984271 found skill text is about 21% of billed eval cost (35 of 103 tests), so trimming it per model is worth measuring. Nothing changes for anyone today. Every model rung and unknown models load `full`, and the committed SKILL.md files are byte-identical to the previous release. A smaller loadout ships only after GSTA-2 measures it.
+
+### Added
+- **`bin/gstack-modules`**: `list` prints every module id (`skill:`, `section:`, `overlay:`, `preamble:`) with its source and pin; `validate` checks `modules/loadouts.json`; `render --host <h> (--loadout <name> | --modules full,-<id>,+<id>) --out-dir <d>` renders one loadout with the same `--model`, `--install-root` and `--plan-mode` setup uses, and writes `loadout.lock.json` (spec sha256, excluded ids, per-file sha256 and bytes).
+- **`modules/loadouts.json`** (with a JSON schema): rungs `frontier`, `strong`, `mid`, `light`, the model-id table, pinned modules and named loadouts. Every rung and `unknown` map to `full`.
+- **Safety pins**: the start command, plan-mode rules, the question format, completion status, the unattended profile, /ship's review army and adversarial pass, the router and `/gstack-upgrade` can never be excluded, directly or by excluding the skill that holds them (`MODULE_PINNED`).
+- **Renders refuse instead of guessing**: an unknown loadout or module, a malformed spec, a rendered file that still points at an excluded skill or section (`MODULE_EXCLUSION_UNSAFE`), or an `--out-dir` that an earlier render did not write (`RENDER_DEST_NOT_OWNED`) each exit 2 with a fix line and a `docs/troubleshooting.md` anchor, and never fall back to `full`. A failed render leaves the earlier one in place.
+- **`docs/loadouts.md`**: terms, commands, how to build an eval arm, and how a loadout changes (only with a cited GSTA-2 run).
+
+### Changed
+- `gen:skill-docs` accepts `--loadout` and `--modules` with an `--out-dir` outside the checkout; a selection with exclusions aimed at the committed tree is refused. Excluded sections render a one-line `Not loaded in the <loadout> loadout` stub, and `{{IF_SECTION:<id>}}` guards remove skeleton text that belongs to a section (office-hours' second-opinion offer and visual-design phase, plan-design-review's review-sections self-check). `gstack/llms.txt` lists only the skills a render includes.
+
+### For contributors
+- New `test/module-loadouts.test.ts` covers the manifest, selection, pins, the render filter, the CLI and the byte-identical `full` render. `.gstack/pregate.json` allows the two new `modules/` files as strays. `test/gen-skill-docs-prune-stale.test.ts`'s copied fixture now links `scripts/modules.ts`; no assertion, threshold or budget changed.
+
 ## [1.91.304.0] - 2026-10-29
 
 **Running the Capy installer for a second workflow on the same machine no longer takes away the first one's admission.** /ship's docs step runs `scripts/install.sh --for document-release`, and that run replaced the `--for ship` install verdict with its narrower one, so the rest of /ship refused with "the install verdict certified for=document-release, which does not cover codex that ship needs" until someone reran `--for ship` (#3561, seen on gstack-evals#13).
