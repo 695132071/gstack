@@ -62,6 +62,7 @@ export const FREE_FIXTURES: Readonly<Record<string, readonly string[]>> = {
   'test/fixtures/context-bill/**': ['test/context-bill.test.ts', 'test/context-budget-ratchet.test.ts'],
   'test/fixtures/context-budget.json': ['test/helpers/capture-context-budget.ts', 'test/test-value-bar.test.ts'],
   'test/fixtures/context-restore-fragment-match-captures.json': ['test/context-restore-fragment-verdict.test.ts'],
+  'test/fixtures/cookie-judge-train42-replies.json': ['test/cookie-workflow-judge-input.test.ts'],
   'test/fixtures/coverage-audit-cd-chain.json': ['test/coverage-audit-evidence.test.ts'],
   'test/fixtures/coverage-audit-parallel-column.json': ['test/coverage-audit-evidence.test.ts'],
   'test/fixtures/coverage-audit-separator-collision.json': ['test/coverage-audit-evidence.test.ts'],

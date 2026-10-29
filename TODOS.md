@@ -788,15 +788,15 @@ Each item was deferred with a reason during the `/claude-api prompt-audit` clean
   format errors, so it stays on today's request), the default workflow judge
   (landed, but one provider refusal on corpus item f03 under the new prompt,
   matched by one under the old prompt) and the cookie workflow judge (GSTA-91:
-  held on one new false pass on a07, zero new-request format errors, so it stays
-  on today's request; today's request itself false-passes a07 in `old-b` and on
+  held on one new false pass on a07, zero new-request format errors; the hold was
+  released on GStack Minder's 2026-10-29 ruling and it now sends the schema; today's request itself false-passes a07 in `old-b` and on
   both valid `old-a` samples, and a08 in `old-a`, so the prose step targets those). Reuse `test/fixtures/judge-calibration`
   and `scripts/judge-calibration.ts`. Priority P3. Effort M.
 - **Uncalibrated workflow-judge configurations** — build a corpus and calibrate
   schema transport for the frontier configuration (review/SKILL.md workflow); it
   stays on today's request. The cookie configuration
   (setup-browser-cookies/SKILL.md workflow) has a corpus and a held comparison-1
-  (GSTA-91), so it also stays on today's request. After any transport change,
+  (GSTA-91); it moved to the schema on GStack Minder's 2026-10-29 release ruling. After any transport change,
   re-run the review and cookie workflow judges. Priority P3. Effort M.
 - **Claude model auto-detection for the skill overlay** — when no
   `claude_overlay_model` is set, detect the Claude Code model (`ANTHROPIC_MODEL`,

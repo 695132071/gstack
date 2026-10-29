@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.91.310.0] - 2026-10-29
+
+**The cookie workflow judge now asks for structured output, so a quote the model forgets to escape can no longer fail the gate.** Train 42 went red because both of its `setup-browser-cookies/SKILL.md workflow` samples came back as free text with a bare quote inside `reasoning` ("one --domain per run"), and neither parsed. The GSTA-91 comparison had measured that failure: 2 of 144 free-text samples failed to parse, against 0 of 72 with the schema.
+
+### Changed
+- **Cookie workflow judge transport:** `setup-browser-cookies/SKILL.md workflow` now sends `WORKFLOW_JUDGE_RESPONSE_SCHEMA`, released on GStack Minder's ruling: "GStack Minder, 2026-10-29: release the GSTA-91 hold; a07 is matched by old-b; free-text parse errors cost train 42". Its model, thresholds (4/3/4), sample count and case kind are unchanged. The ruling is recorded in `test/fixtures/judge-calibration/cookie-workflow/release.json`, and the held comparison stays recorded as held.
+
+### Tests
+- `test/cookie-workflow-judge-input.test.ts` runs the registered cookie callback through the real `callJudge` and pins its request to the schema. It replays train 42's two replies (msg_011CgVnRtVj5vyLvb56m6KJH, msg_011CgVne5GStZ6f9pRoCvgWE): their free-text bytes do not parse, and the same judgment returned as schema output scores and passes. `test/judge-calibration.test.ts` reads the release record. Both fail without the transport change.
+
+### Gate integrity
+- Gate edit: the cookie judge's response transport moves from free text to the JSON schema, on the ruling above. No threshold, sample, trial, deadline or case-kind change. The Haiku free-text failure pin in `test/llm-judge-frontier.test.ts` is untouched.
+
 ## [1.91.309.0] - 2026-10-29
 
 **The judged review and Eng prose each give one rule where the paid judges kept finding two, and a judge that runs out of time now says what it was waiting on.** Every sample of two red panels on #3527's screens (review 40617200857, plan-eng-review 40634787316), attempt and rerun, named the same contradictions; a third red (ship, train 35 gate 40660626349) hit the 120 s judge deadline with nothing logged but "No completed model response".
