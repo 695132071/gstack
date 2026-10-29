@@ -125,6 +125,7 @@ async function exerciseEligibility(testId: string, kinds: PathEligibilityCase[])
             directory: path.join(f.state, 'projects/fixture-shared-libs/.review-starts'),
             branch: fixtureGit(f, 'symbolic-ref', '--quiet', '--short', 'HEAD'), wtree: fixtureWorkingTree(f),
             startedAt: last.review_binding.started_at, finding: prepared.current, reusable: false,
+            sources: Object.fromEntries(sourceBefore),
             coveredPaths: skipped.find((finding: any) => finding.fingerprint === prepared.current.fingerprint)?.snapshot_covered_paths,
           })).toBe(true);
         } else {

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.91.301.0] - 2026-10-29
+
+**Four paid gate cases that went red on 2026-10-28 without a product defect now pass on the runs that failed them.** Each repair replays the failing run as a free test that fails without it.
+
+### Fixed
+- **plan-design-with-ui-scope**: the Design focus question counts when it puts "review all 7 areas or focus" in its rated title and letters its options ("A) Review all 7 areas"), as gate 40664336141 asked it.
+- **plan-review-report**: the case turns the default-on outside voice off with `codex_reviews: disabled`, the skill's documented switch. In gate 40660626349 both reds ran out of the 20-turn cap before writing the report, and the outside voice had used 4 of their 21 turns. The cap is unchanged.
+- **shared-libs-review-path-eligibility**: a Bash read that printed a whole evidence file counts even when a later command in the same call failed, as one did in run 40617200857.
+- **office-hours-brain-writeback**: the fake `gbrain` saves a page piped on stdin, the form the SAVE_RESULTS template shows, as well as `--content`.
+
+### Gate integrity
+- `designFocusBoundary` (test/skill-e2e-plan-design-with-ui.test.ts) accepts the all-7 offer in the rated title line and rejects issue-numbered option sets. Seven new negative controls cover a missing rating, a /7 rating, no focus, another count, an offer below the title, issue-numbered options and a single option.
+- `hasTrustedSharedLibsCheck` (test/helpers/shared-libs-review-start-evidence.ts) accepts an errored Bash read only in a multi-command call whose output holds the exact evidence source. Start, check and finish calls must still succeed. The existing "errored caller read" control still fails, and five new controls do too.
+- The plan-review-report case input now disables the outside voice. Outside-voice coverage is not part of this case's assertions.
+
 ## [1.91.300.0] - 2026-10-28
 
 **Three free tests that went red at random now fail only when the code under test is wrong.** Today's flaky-test pass (GSTA-139) traced two Linux reds to their fixtures and fixed a third that was certain to fail under load. No product code changed.

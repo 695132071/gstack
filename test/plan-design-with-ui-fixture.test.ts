@@ -95,6 +95,10 @@ const captured39363705692 = JSON.parse(fs.readFileSync(${JSON.stringify(path.joi
 // "completeness") and offered "All 7 passes (recommended)" against "States + layout only".
 const captured39852003387 = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(ROOT, 'test/fixtures/design-ui-focus-capture-39852003387.json'))}, 'utf8'))
   .calls.map(({ preReview, observedAtMs, call }) => nativePlanCallFingerprint(call, observedAtMs, preReview));
+// Run 40664336141 slice 6 (00e71383): Opus 5.5 asked "I rated this plan 4/10 on design completeness.
+// Should I review all 7 areas or focus on a few?" with lettered options ("A) Review all 7 areas").
+const captured40664336141 = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(ROOT, 'test/fixtures/design-ui-focus-capture-40664336141.json'))}, 'utf8'))
+  .calls.map(({ preReview, observedAtMs, call }) => nativePlanCallFingerprint(call, observedAtMs, preReview));
 const unnumberedFinding = fp('unnumbered-finding', "Which region is the dashboard's primary anchor, and how is the page composed?", false);
 unnumberedFinding.nativeCall.questions[0].options = nativeFinding.nativeCall.questions[0].options;
 const finding = fp('finding', 'Which loading feedback should Save show?', false);
@@ -223,6 +227,20 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
     expect(opts.isReviewAUQ(captured39852003387[0])).toBe(false);
     expect(captured39852003387.slice(1, 3).some(call => opts.isLastStep0AUQ(call) || opts.isReviewAUQ(call))).toBe(false);
     expect(opts.isReviewAUQ(captured39852003387[3])).toBe(true);
+    expect(opts.isLastStep0AUQ(captured40664336141[1])).toBe(true);
+    expect(opts.isReviewAUQ(captured40664336141[1])).toBe(false);
+    expect([0, 2].some(index => opts.isLastStep0AUQ(captured40664336141[index]))).toBe(false);
+    expect(opts.isReviewAUQ(captured40664336141[3])).toBe(true);
+    const lettered = ['A) Review all 7 areas (recommended)', 'B) Focus on hierarchy/states/responsive'];
+    for (const [label, question, labels] of [
+      ['title-offer-unrated', 'D2: Should I review all 7 areas or focus on a few?\\nELI10: I will review every area unless you narrow it.', lettered],
+      ['title-offer-out-of-seven', 'D2: I rated this plan 4/7 on design completeness. Should I review all 7 areas or focus on a few?', lettered],
+      ['title-offer-without-focus', 'D2: I rated this plan 4/10 on design completeness. Should I review all 7 areas?', lettered],
+      ['title-offer-other-count', 'D2: I rated this plan 4/10 on design completeness. Should I review all 4 areas or focus on a few?', lettered],
+      ['offer-below-title', 'D2: I rated this plan 4/10 on design completeness. Want me to focus?\\nNext I will review all 7 areas.', lettered],
+      ['issue-labeled-title-offer', 'D5 (Issue 3): Keyboard focus across all 7 panels? I rated this plan 4/10 on design completeness.', ['3A Trap focus in the modal', '3B Leave focus order as is']],
+      ['single-option-title-offer', 'D2: I rated this plan 4/10 on design completeness. Should I review all 7 areas or focus on a few?', lettered.slice(0, 1)],
+    ]) expect(opts.isLastStep0AUQ(labeled(label, question, labels)), label).toBe(false);
     const areas = ['All 7 areas (recommended)', 'Only specific areas'];
     for (const body of ['ELI10: I rated this plan 4/10 for design completeness.', 'ELI10: This plan is a 3/10 on design completeness.',
       'ELI10: Design completeness: 6.5/10. The gaps are layout and states.', 'ELI10: I rated this plan 4/10 on design.']) {
@@ -298,6 +316,8 @@ mock.module(${JSON.stringify(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'
       : mode === 'captured-39363705692-no-focus' ? captured39363705692.filter((_, index) => index !== 0)
       : mode === 'captured-39852003387' ? captured39852003387
       : mode === 'captured-39852003387-no-focus' ? captured39852003387.filter((_, index) => index !== 0)
+      : mode === 'captured-40664336141' ? captured40664336141
+      : mode === 'captured-40664336141-no-focus' ? captured40664336141.filter((_, index) => index !== 1)
       : mode === 'captured-focus-after-finding' ? [...captured.filter((_, index) => index !== 1), captured[1]]
       : mode.startsWith('target-menu') ? [target, fp('other', 'Which artifact should I inspect?', false)]
       : mode === 'early-exit' ? [] : mode === 'focus-only' ? [chosenFocus]
@@ -342,12 +362,12 @@ await import(${JSON.stringify(path.join(ROOT, 'test/skill-e2e-plan-design-with-u
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
-test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered', 'native-passes', 'captured', 'captured-rated', 'captured-39298269902', 'captured-39363705692', 'captured-39852003387'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
+test.each(['source', 'paraphrase', 'native-sequence', 'native-unnumbered', 'native-passes', 'captured', 'captured-rated', 'captured-39298269902', 'captured-39363705692', 'captured-39852003387', 'captured-40664336141'])('UI gate seeds the exact target and accepts Design progress with an unselected no-UI alternative (%s)', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(0);
 }, 20_000);
 
-test.each(['target-menu', 'target-menu-design-system', 'focus-only', 'captured-no-focus', 'captured-focus-after-finding', 'captured-rated-no-focus', 'captured-39298269902-no-focus', 'captured-39298269902-focus-only', 'captured-39363705692-no-focus', 'captured-39852003387-no-focus', 'native-setup-only', 'native-voices-only', 'early-exit', 'timeout', 'exited', 'unanswered-finding', 'failed-finding', 'no-native-finding'])('UI gate rejects %s and removes its fixture', mode => {
+test.each(['target-menu', 'target-menu-design-system', 'focus-only', 'captured-no-focus', 'captured-focus-after-finding', 'captured-rated-no-focus', 'captured-39298269902-no-focus', 'captured-39298269902-focus-only', 'captured-39363705692-no-focus', 'captured-39852003387-no-focus', 'captured-40664336141-no-focus', 'native-setup-only', 'native-voices-only', 'early-exit', 'timeout', 'exited', 'unanswered-finding', 'failed-finding', 'no-native-finding'])('UI gate rejects %s and removes its fixture', mode => {
   const result = exercise(mode);
   expect(result.code, result.output).toBe(1);
   expect(result.output).toContain('plan-design-review with UI scope FAILED');

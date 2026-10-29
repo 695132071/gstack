@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { JUDGE_MS, CAPTURE_MS, CAPTURE_LONG_MS, PTY_MS } from './helpers/eval-budgets';
 import { runSkillTest } from './helpers/session-runner';
+import { seedHermeticGstackHome } from './helpers/hermetic-env';
 import { resolveEvalModel } from '../lib/eval-model';
 import { EvalCollector } from './helpers/eval-store';
 import { OFFICE_HOURS_BUN_GRACE_MS, runRecordedOfficeHoursAttempt } from './helpers/office-hours-attempt';
@@ -380,12 +381,19 @@ Focus on architecture, code quality, tests, and performance sections.`,
 describeIfSelected('Plan Review Report E2E', ['plan-review-report'], () => {
   test('/plan-eng-review writes GSTACK REVIEW REPORT to plan file', async () => {
     let planDir: string | undefined;
+    let stateDir: string | undefined;
     try {
       await runRecordedOfficeHoursAttempt({
         collector: evalCollector, name: '/plan-review-report', suite: 'Plan Review Report E2E',
         model: resolveEvalModel('capture'), budgetMs: CAPTURE_LONG_MS,
         run: async signal => {
           planDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-review-report-'));
+          // This case measures the report write within 20 turns. The default-on outside
+          // voice (timer, Agent, TaskStop) took 4 of the 21 turns in both reds of gate
+          // 40660626349, so the case uses the skill's documented off switch.
+          stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-e2e-review-report-state-'));
+          seedHermeticGstackHome(stateDir);
+          fs.appendFileSync(path.join(stateDir, 'config.yaml'), 'codex_reviews: disabled\n');
           const run = (cmd: string, args: string[]) => {
             const result = spawnSync(cmd, args, { cwd: planDir, stdio: 'pipe', timeout: 5000 });
             if (result.error || result.status !== 0) {
@@ -445,6 +453,7 @@ plan.md is the plan file for this review session; save your review there.`,
             maxTurns: 20,
             timeout: CAPTURE_LONG_MS,
             testName: 'plan-review-report',
+            env: { GSTACK_HOME: stateDir },
             runId, signal,
             model: resolveEvalModel('capture'),
           });
@@ -496,6 +505,7 @@ plan.md is the plan file for this review session; save your review there.`,
     } finally {
       // Each configured retry owns a pristine plan and finishes cleanup first.
       if (planDir) try { fs.rmSync(planDir, { recursive: true, force: true }); } catch {}
+      if (stateDir) try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch {}
     }
   }, CAPTURE_LONG_MS + OFFICE_HOURS_BUN_GRACE_MS);
 });

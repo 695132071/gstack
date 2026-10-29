@@ -63,7 +63,7 @@ The plan-ceo-review-plan-mode (:89, :108), plan-devex-review-plan-mode (:181-222
 | auq-format-gate | test/skill-e2e-ask-user-question-format-compliance.test.ts:58 | question ~ `options differ in kind` | AUQ tool input | yes | (c) |
 | auq-format-gate | test/skill-e2e-ask-user-question-format-compliance.test.ts:61, :68 | recommendation substance ≥ 4 | — | — | judge |
 | plan-tune-inspect | test/skill-e2e-plan-tune.test.ts:167-169, :185 | output names ≥2 of 3 seeded question IDs or aliases | question-log is seeded fixture input | yes (inspection report) | (c) |
-| plan-review-report | test/skill-e2e-plan.test.ts:463-491 | plan.md `## GSTACK REVIEW REPORT`, CEO/Eng/Design rows, ends with `NO UNRESOLVED DECISIONS` or a bullet | rows come from the seeded review log; the table is rendered | yes | (c) |
+| plan-review-report | test/skill-e2e-plan.test.ts:472-500 | plan.md `## GSTACK REVIEW REPORT`, CEO/Eng/Design rows, ends with `NO UNRESOLVED DECISIONS` or a bullet | rows come from the seeded review log; the table is rendered | yes | (c) |
 
 ### test/skill-e2e-design.test.ts (gate cases)
 
@@ -89,7 +89,7 @@ The plan-ceo-review-plan-mode (:89, :108), plan-devex-review-plan-mode (:181-222
 |---|---|---|---|---|---|
 | shared-libs-read-only | test/skill-e2e-shared-libs.test.ts:113-120 | report ~ uncommitted/overlay/raw, tip and branch SHAs, retry-worker/route, no blob link for branch-only file | none (read-only by contract) | yes | (c) |
 | shared-libs-unsupported-git | test/skill-e2e-shared-libs.test.ts:136, :144 | report ~ unavailable/unsupported/limited; not "no commits/PRs found" | none | yes | (c) |
-| shared-libs-review-path-eligibility | test/skill-e2e-shared-libs-paths.test.ts:133-134 | `trace + output` ~ submodule/160000, check-ignore/ignored (output alone satisfies) | Bash command trace (first operand) | no | (b) |
+| shared-libs-review-path-eligibility | test/skill-e2e-shared-libs-paths.test.ts:134-135 | `trace + output` ~ submodule/160000, check-ignore/ignored (output alone satisfies) | Bash command trace (first operand) | no | (b) |
 
 ### test/skill-e2e-ship-docsync.test.ts, test/skill-e2e-docsync-spawned.test.ts
 

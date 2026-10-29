@@ -17,6 +17,7 @@ import {
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import capturedChecker from './fixtures/shared-libs-index-flags-r59-checker-public.json';
 import loopRead from './fixtures/shared-libs-index-flags-loop-read-39173752116.json';
+import erroredRead from './fixtures/shared-libs-path-ignored-errored-read-40617200857.json';
 
 const helper = path.join(SHARED_LIBS_ROOT, 'bin/gstack-review-log');
 const fixtures: SharedLibsFixture[] = [];
@@ -96,7 +97,8 @@ async function capture(change: string, prepared?: PathEligibilityFixture, declar
     directory: path.join(f.state, 'projects/fixture-shared-libs/.review-starts'),
     branch: fixtureGit(f, 'symbolic-ref', '--quiet', '--short', 'HEAD'), wtree: fixtureWorkingTree(f),
     startedAt: receipt.review_start.started_at, finding: current, reusable: change === 'unchanged',
-    coveredPaths: receipt.snapshot.covered_paths };
+    coveredPaths: receipt.snapshot.covered_paths,
+    ...(prepared ? { sources: Object.fromEntries(current!.evidence_paths.map((file: string) => [file, fs.readFileSync(path.join(f.repo, file), 'utf8')])) } : {}) };
   return { f, current, token, receipt, events, checkAt, finishAt, expected, prepared, resumed, prerequisites, ...(declared ? { questions } : {}) };
 }
 
@@ -685,5 +687,39 @@ describe('literal loop reads from the captured skip-worktree review', () => {
     }
     if (shape === 'path outside the repo') call.input.command = call.input.command.replace(' src/retry-route.ts ', ' ../outside/src/retry-route.ts ');
     expect(hasTrustedSharedLibsCheck(events, loopRead.expected)).toBe(false);
+  });
+});
+
+// Gate 40617200857 slice 8: the ignored-path review returned all of src/retry-worker.ts through
+// cat -n, then a later `echo ===` in the same call failed, so the result carried is_error.
+describe('errored Bash reads from the captured ignored-path review', () => {
+  const blocks = (events: any[]) => events.flatMap(event => event.message.content);
+  const read = (events: any[]) => blocks(events).find((block: any) => block.type === 'tool_use'
+    && block.input?.command?.startsWith('cat -n src/retry-worker.ts; echo ===;'));
+  const output = (events: any[], id: string) => blocks(events).find((block: any) => block.type === 'tool_result' && block.tool_use_id === id);
+
+  test('a whole evidence source returned before a later failure counts as reading it', () => {
+    const events = structuredClone(erroredRead.events);
+    expect(output(events, read(events).id).is_error).toBe(true);
+    expect(hasTrustedSharedLibsCheck(events, erroredRead.expected)).toBe(true);
+  });
+
+  test.each(['no expected sources', 'empty expected source', 'last source line missing', 'missing file', 'errored single read', 'errored native Read', 'errored checker'])('%s is still rejected', shape => {
+    const events = structuredClone(erroredRead.events), call = read(events), result = output(events, call.id);
+    const expected: any = structuredClone(erroredRead.expected);
+    if (shape === 'no expected sources') delete expected.sources;
+    if (shape === 'empty expected source') expected.sources['src/retry-worker.ts'] = '';
+    if (shape === 'last source line missing') result.content = result.content.replace(/\n +15\t\}\n/, '\n');
+    if (shape === 'missing file') result.content = 'Exit code 1\ncat: src/retry-worker.ts: No such file or directory';
+    if (shape === 'errored single read') call.input.command = 'cat -n src/retry-worker.ts';
+    if (shape === 'errored native Read') {
+      call.name = 'Read';
+      call.input = { file_path: 'src/retry-worker.ts' };
+    }
+    if (shape === 'errored checker') {
+      const checker = blocks(events).find((block: any) => block.type === 'tool_use' && block.input?.command?.includes('--check-shared-libs'));
+      output(events, checker.id).is_error = true;
+    }
+    expect(hasTrustedSharedLibsCheck(events, expected)).toBe(false);
   });
 });

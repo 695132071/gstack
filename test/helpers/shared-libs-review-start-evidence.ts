@@ -438,9 +438,9 @@ function inspectsFile(source: string, file: string, text: string, expected: Star
 }
 
 /** Inspect native public tool blocks only; narration and instruction contents are not evidence. */
-function nativeToolPairs(events: unknown[]) {
+function nativeToolPairs(events: unknown[], includeErrors = false) {
   const pending = new Map<string, { tool: string; input: any; at: number }>();
-  const pairs: { tool: string; input: any; at: number; returnedAt: number; text: string }[] = [];
+  const pairs: { tool: string; input: any; at: number; returnedAt: number; text: string; error: boolean }[] = [];
   let position = 0;
   for (const event of events as any[]) {
     for (const block of Array.isArray(event?.message?.content) ? event.message.content : []) {
@@ -450,11 +450,11 @@ function nativeToolPairs(events: unknown[]) {
       } else if (event.type === 'user' && block.type === 'tool_result') {
         const call = pending.get(block.tool_use_id);
         pending.delete(block.tool_use_id);
-        if (!call || block.is_error === true) continue;
+        if (!call || block.is_error === true && !includeErrors) continue;
         const text = typeof block.content === 'string' ? block.content
           : Array.isArray(block.content) ? block.content.filter((part: any) => part.type === 'text'
             && typeof part.text === 'string').map((part: any) => part.text).join('\n') : '';
-        pairs.push({ ...call, returnedAt: position, text });
+        pairs.push({ ...call, returnedAt: position, text, error: block.is_error === true });
       }
     }
   }
@@ -467,6 +467,8 @@ interface CheckerContext extends StartContext {
   finding: any;
   reusable: boolean;
   coveredPaths: string[];
+  /** Exact evidence sources: an errored Bash read counts only when its output holds the whole source. */
+  sources?: Record<string, string>;
 }
 
 export function hasTrustedSharedLibsCheck(events: unknown[], expected: CheckerContext): boolean {
@@ -497,8 +499,11 @@ export function hasTrustedSharedLibsCheck(events: unknown[], expected: CheckerCo
     }).map(call => ({ ...call, last: call === calls.at(-1),
       words: call.words.map(word => expandVariables(word, call.variables) ?? word) }));
   };
-  const pairs = nativeToolPairs(events);
-  const bash = pairs.filter(pair => pair.tool === 'Bash' && typeof pair.input?.command === 'string');
+  // Run 40617200857: a later `echo ===` failed in the same call, so the result that
+  // returned the whole first file was marked is_error. Such a read counts only in a
+  // multi-command call whose output holds the exact source. Start, check and finish stay strict.
+  const pairs = nativeToolPairs(events, true);
+  const bash = pairs.filter(pair => !pair.error && pair.tool === 'Bash' && typeof pair.input?.command === 'string');
   for (const start of bash) {
     const direct = invocations(start.input.command).some(call => call.last && call.words.length === 3
       && call.words[1] === '--start' && call.words[2] === 'review');
@@ -546,10 +551,13 @@ export function hasTrustedSharedLibsCheck(events: unknown[], expected: CheckerCo
       const reads = pairs.filter(pair => pair.at > start.returnedAt && pair.returnedAt < check.at && pair.text.trim());
       if (!expected.finding.evidence_paths.every((relative: string) => {
         const file = paths.join(expected.repo, relative);
-        return reads.some(read => read.tool === 'Read' && typeof read.input?.file_path === 'string'
+        const source = expected.sources?.[relative]?.replace(/\n$/, '');
+        return reads.some(read => read.tool === 'Read' && !read.error && typeof read.input?.file_path === 'string'
           && literalPath(read.input.file_path, expected.repo, paths) === file
           || read.tool === 'Bash' && typeof read.input?.command === 'string'
-          && inspectsFile(read.input.command, file, read.text, expected));
+          && inspectsFile(read.input.command, file, read.text, expected)
+          && (!read.error || !!source && commands(read.input.command).length > 1
+            && read.text.replace(/^ *\d+\t/gm, '').includes(source)));
       })) continue;
       if (bash.some(finish => finish.at > check.returnedAt && invocations(finish.input.command).some(call =>
         call.words.length === 4 && call.words[2] === '--finish' && call.words[3] === token))) return true;

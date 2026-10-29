@@ -8,6 +8,7 @@ import { isPreTurnInfraFailure, recordE2E } from './helpers/e2e-helpers';
 import { EvalCollector, isFinalizedEvalResultFile, listEvalJsonFiles, type EvalTestEntry } from './helpers/eval-store';
 import { OFFICE_HOURS_BUN_GRACE_MS, runRecordedOfficeHoursAttempt } from './helpers/office-hours-attempt';
 import { isPaidTestFile } from './helpers/paid-test-set';
+import { seedHermeticGstackHome } from './helpers/hermetic-env';
 import { resolveEvalModel } from '../lib/eval-model';
 
 const ROOT = path.resolve(import.meta.dir, '..');
@@ -20,6 +21,17 @@ const openCompletion = '\n**VERDICT:** ENG ISSUES OPEN\n\n**UNRESOLVED DECISIONS
 const CASE = '/plan-eng-review writes GSTACK REVIEW REPORT to plan file';
 
 type Scenario = { kind: string; table?: string; exitReason?: string; open?: boolean };
+
+// Run the copied section's real Outside Voice preflight against a state root.
+function outsideMode(section: string, home: string, gstackHome?: string): string {
+  const block = section.slice(section.indexOf('**Preflight — decide whether and how the outside voice runs:**')).match(/```bash\n([\s\S]*?)```/)![1];
+  // Git Bash on Windows needs its own spelling of the checkout path.
+  const bin = Bun.spawnSync(['bash', '-c', 'cd "$1" && pwd', '_', path.join(ROOT, 'bin')], { timeout: 10_000 }).stdout.toString().trim();
+  const child = Bun.spawnSync(['bash', '-c', block.replaceAll('"$HOME/.claude/skills/gstack/bin/gstack-config"', '"$GSTACK_CONFIG_BIN"')], {
+    env: { PATH: process.env.PATH ?? '', HOME: home, GSTACK_CONFIG_BIN: `${bin}/gstack-config`,
+      ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}), ...(gstackHome ? { GSTACK_HOME: gstackHome } : {}) }, timeout: 10_000 });
+  return child.stdout.toString().trim();
+}
 
 async function exercise(scenarios: Scenario[], opts: { deadline?: boolean; sibling?: boolean } = {}) {
   const owned = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-report-recording-free-'));
@@ -46,7 +58,7 @@ async function exercise(scenarios: Scenario[], opts: { deadline?: boolean; sibli
   for (const declaration of source.matchAll(/^import[\s\S]*?;\n/gm)) executable = executable.replace(declaration[0], '');
   const js = new Bun.Transpiler({ loader: 'ts', target: 'bun' }).transformSync(executable);
   const args: Record<string, any> = {
-    expect, ROOT, runId: 'public-report-free', evalsEnabled: true, CAPTURE_LONG_MS, resolveEvalModel,
+    expect, ROOT, runId: 'public-report-free', evalsEnabled: true, CAPTURE_LONG_MS, resolveEvalModel, seedHermeticGstackHome,
     OFFICE_HOURS_BUN_GRACE_MS, EvalCollector: BoundCollector, recordE2E,
     createEvalCollector: (tier: string) => new BoundCollector(tier),
     finalizeEvalCollector: async (collector: EvalCollector | null) => {
@@ -82,7 +94,10 @@ async function exercise(scenarios: Scenario[], opts: { deadline?: boolean; sibli
     runSkillTest: async (options: any) => {
       const file = path.join(options.workingDirectory, 'plan.md');
       const seed = fs.readFileSync(file, 'utf8');
+      const section = fs.readFileSync(path.join(options.workingDirectory, 'plan-eng-review/sections/review-sections.md'), 'utf8');
       calls.push({ ...options, seed,
+        outside: outsideMode(section, options.workingDirectory, options.env?.GSTACK_HOME),
+        unseeded: outsideMode(section, options.workingDirectory, fs.mkdtempSync(path.join(owned, 'unseeded-state-'))),
         main: fs.readFileSync(path.join(options.workingDirectory, 'plan-eng-review/SKILL.md'), 'utf8'),
         section: fs.readFileSync(path.join(options.workingDirectory, 'plan-eng-review/sections/review-sections.md'), 'utf8'),
       });
@@ -219,7 +234,12 @@ test('canonical reports preserve both successful exits, terminal forms, metadata
     expect(call.main).toBe(fs.readFileSync(path.join(ROOT, 'plan-eng-review/SKILL.md'), 'utf8'));
     expect(call.section).toBe(fs.readFileSync(path.join(ROOT, 'plan-eng-review/sections/review-sections.md'), 'utf8'));
     expect(call.section).toContain('| Review | Trigger | Why | Runs | Status | Findings |');
+    // Gate 40660626349: both reds spent 4 of 21 turns on the default-on outside voice.
+    expect(call.outside).toBe('CODEX_MODE: disabled');
+    expect(call.unseeded).not.toContain('disabled');
+    expect(call.unseeded).toMatch(/^CODEX_MODE: \w+$/);
   }
+  expect(actual.fixtures.filter(dir => path.basename(dir).startsWith('skill-e2e-review-report-state-'))).toHaveLength(2);
   for (const outcome of actual.outcomes) {
     expect(outcome.entries).toHaveLength(1);
     expect(outcome.entries[0]).toMatchObject({ name: '/plan-review-report', suite: 'Plan Review Report E2E', tier: 'e2e', passed: true,

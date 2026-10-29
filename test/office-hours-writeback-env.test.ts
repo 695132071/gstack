@@ -7,7 +7,7 @@ import * as path from 'node:path';
 const ROOT = path.resolve(import.meta.dir, '..');
 const SUITE = path.join(ROOT, 'test/skill-e2e-office-hours-brain-writeback.test.ts');
 
-async function probeWritebackEnvironment(option: 'env' | 'extraEnv') {
+async function probeWritebackEnvironment(option: 'env' | 'extraEnv', put: 'content' | 'stdin' | 'stdin-short' = 'content') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-hours-env-'));
   const driverBin = path.join(dir, 'bin');
   const operatorHome = path.join(dir, 'operator-home');
@@ -43,7 +43,9 @@ const version = Bun.spawn(['gbrain', '--version'], { env: process.env, stdin: 'i
 const [versionOut, versionErr, versionCode] = await Promise.all([new Response(version.stdout).text(), new Response(version.stderr).text(), version.exited]);
 if (versionCode || versionErr || versionOut.trim() !== 'gbrain test-0.41.0') process.exit(44);
 const payload = '---\\ntitle: Pixel fund\\ntags: [fixture]\\n---\\n' + 'Design detail. '.repeat(25);
-const put = Bun.spawn(['gbrain', 'put', 'office-hours/pixel-fund', '--content', payload], { env: process.env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+const put = ${JSON.stringify(put)} === 'content'
+  ? Bun.spawn(['gbrain', 'put', 'office-hours/pixel-fund', '--content', payload], { env: process.env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
+  : Bun.spawn(['gbrain', 'put', 'office-hours/pixel-fund'], { env: process.env, stdin: new Blob([${JSON.stringify(put)} === 'stdin' ? payload : 'not a page']), stdout: 'pipe', stderr: 'pipe' });
 const [putOut, putErr, putCode] = await Promise.all([new Response(put.stdout).text(), new Response(put.stderr).text(), put.exited]);
 if (putCode || putOut || putErr) process.exit(45);
 fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ ...facts, fakeVersionMatches: true, fakePutSucceeded: true,
@@ -105,6 +107,21 @@ describe('office-hours writeback child environment', () => {
     expect(code, output).toBe(0);
     expect(output).toContain('1 pass');
     expect(Object.values(facts).every(Boolean)).toBe(true);
+    expect(facts.fakePutSucceeded).toBe(true);
+  }, 30_000);
+
+  // GSTA-134 b0fba22: failing trials piped the page on stdin, as the SAVE_RESULTS template shows.
+  test('a page piped on stdin reaches the payload the original assertions read', async () => {
+    const { code, output, facts } = await probeWritebackEnvironment('env', 'stdin');
+    expect(code, output).toBe(0);
+    expect(output).toContain('1 pass');
+    expect(facts.fakePutSucceeded).toBe(true);
+  }, 30_000);
+
+  test('a stdin body without frontmatter still fails the original payload assertions', async () => {
+    const { code, output, facts } = await probeWritebackEnvironment('env', 'stdin-short');
+    expect(code).toBe(1);
+    expect(output).toContain('Received: "not a page"');
     expect(facts.fakePutSucceeded).toBe(true);
   }, 30_000);
 

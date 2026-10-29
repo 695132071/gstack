@@ -16,8 +16,8 @@
  *      template on demand (the compact block points to it).
  *   3. Write a fake `gbrain` shell script into workdir/bin/ with robust
  *      argv quoting (printf %q) so heredoc payloads in --content survive
- *      shell-to-shell. The fake logs every invocation + writes payloads
- *      to a per-slug file for inspection.
+ *      shell-to-shell. The fake logs every invocation + writes the --content
+ *      or stdin page (the template's form) to a per-slug file for inspection.
  *   4. Run /office-hours via runSkillTest with workdir/bin/ first on PATH.
  *      Feed a deterministic founder pitch + auto-decide instructions.
  *   5. Assert the argv log contains `gbrain put office-hours/<slug>`, the
@@ -180,16 +180,21 @@ case "$1" in
   get_page) echo "Unknown command: get_page" >&2; exit 1 ;;
   put)
     SLUG="$2"
+    PAYLOAD="${payloadDir}/$SLUG.md"
     shift 2
     while [ -n "$1" ]; do
       if [ "$1" = "--content" ]; then
-        PAYLOAD_DIR="${payloadDir}"
-        mkdir -p "$PAYLOAD_DIR/$(dirname "$SLUG")"
-        printf '%s' "$2" > "$PAYLOAD_DIR/$SLUG.md"
-        break
+        mkdir -p "$(dirname "$PAYLOAD")"
+        printf '%s' "$2" > "$PAYLOAD"
+        exit 0
       fi
       shift
     done
+    # The SAVE_RESULTS template pipes the page: gbrain put "<slug>" < "<page-file>".
+    if [ -p /dev/stdin ] || [ -f /dev/stdin ]; then
+      mkdir -p "$(dirname "$PAYLOAD")"
+      cat > "$PAYLOAD"
+    fi
     exit 0
     ;;
 esac
@@ -241,7 +246,7 @@ Read pitch.md — that's a founder pitch coming to office hours. Select Startup 
 
 For the diagnostic, assume the founder confirmed Q1 (strongest evidence = "230 from a single tweet + 51 paying creators in 6 weeks"), Q2 (status quo = "creators write ad-hoc checks or use opaque Patreon-style platforms"), and Q3 (forcing question already asked).
 
-Generate the design doc per Phase 5. The feature-slug value to substitute into the SAVE_RESULTS template's \`<feature-slug>\` placeholder is exactly 'pixel-fund' (no path prefix — the template already provides the prefix). The \`gbrain\` binary is on PATH at ${workDir}/bin/gbrain. Apply the SAVE_RESULTS template literally: the slug should land at \`<prefix>/pixel-fund\` per the resolver shape, with the actual design doc markdown body in the --content payload. Then enrich entity stubs for any named people or companies mentioned in the pitch.
+Generate the design doc per Phase 5. The feature-slug value to substitute into the SAVE_RESULTS template's \`<feature-slug>\` placeholder is exactly 'pixel-fund' (no path prefix — the template already provides the prefix). The \`gbrain\` binary is on PATH at ${workDir}/bin/gbrain. Apply the SAVE_RESULTS template literally: the slug should land at \`<prefix>/pixel-fund\` per the resolver shape, with the actual design doc markdown body as the page content. Then enrich entity stubs for any named people or companies mentioned in the pitch.
 
 This is a test of the brain-writeback path. Do NOT skip the gbrain save step under any circumstance — the runtime guard ("skip if gbrain not on PATH") does NOT apply here because gbrain IS available. Do NOT explore gbrain --help; follow the SAVE_RESULTS template's exact CLI shape. If you encounter any AskUserQuestion, auto-decide recommended.`,
             workingDirectory: workDir,
@@ -302,7 +307,7 @@ This is a test of the brain-writeback path. Do NOT skip the gbrain save step und
               throw new Error(
                 `Agent called gbrain put but no payload file with 'pixel-fund' ` +
                   `in name was written to ${payloadDir}. Check the fake gbrain ` +
-                  `--content parser for argv quoting issues.`,
+                  `--content and stdin page capture.`,
               );
             }
             const payload = readFileSync(payloadPath, 'utf-8');
