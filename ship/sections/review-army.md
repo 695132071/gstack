@@ -14,13 +14,19 @@ Every repeat starts before the checklist read and captures a fresh REVIEW_START.
 Finish the complete review and QA before applying any fix in Step 9.4.
 
 **Review plan.** Pass 1 runs `~/.claude/skills/gstack/bin/gstack-review-plan
---base <base>`; a repeat uses the plan run that picked it. Save its `REVIEW_PLAN:` line and
-fingerprint. Dispatch exactly its `DISPATCH:` lines (specialists, Red Team, Step
-11's voices), each at its `effort=` on the same model family, in place of 9.1's and
-9.2's own selection rules; a `SKIP:` reviewer
-logs `{"dispatched":false,"reason":"scope"}`. Audits run at `AUDIT_EFFORT:`. The
-core checklist, gate scan and QA always run. Item 6's row adds
-`"dispatches":[{"role":R,"prompt_bytes":N,"diff_bytes":N}]`.
+--base <base>`, plus `--depth-floor <d>` on every plan run when the /ship prompt
+gave `--depth-floor <d>` (it only raises); a repeat uses the plan run that picked it.
+Save its `REVIEW_PLAN:` line and fingerprint, `REVIEW_DEPTH:` (depth,
+`runtime_lines`, `rules`) and `GATE_SCAN:`. Dispatch exactly its `DISPATCH:` lines
+(specialists, Red Team, Step 11's voices), each at its `effort=` on the same model
+family and reading its `DIFF_CMD:`, in place of 9.1's and 9.2's own selection rules;
+`specialist batched` (light depth) is one subagent reading every checklist its
+`checklists=` names, Red Team included, tagging each finding with its checklist.
+A `SKIP:` reviewer logs `{"dispatched":false,"reason":"scope"}`. Audits run at
+`AUDIT_EFFORT:`. The core checklist, gate scan and QA always run. Item 6's row adds
+`"dispatches":[{"role":R,"prompt_bytes":N,"diff_bytes":N}]`, `"depth"`,
+`"runtime_lines"`, `"depth_rules"` (the `rules` hash) and
+`"gate_scan":{"tagged":N|null,"head":"<sha>"}` from those lines.
 
 **Pass 2+ reads the range, not the tree** (`review_scope frozen`): the core read
 in item 2 becomes `git diff $RANGE_BASE`, and every dispatched prompt (specialists,
@@ -391,7 +397,7 @@ Every other specialist, including Testing, reads the full diff with fixtures.
 5. Instructions:
 
 "You are a specialist code reviewer. Read the checklist at {checklist path}, then run
-`DIFF_BASE=<diff-base> && git diff "$DIFF_BASE"` to get the diff (`<diff-base>`: write the sha in before dispatch, the merge base on pass 1 and `RANGE_BASE` from pass 2 on; never a shell variable). Apply the checklist against the diff.
+`DIFF_BASE=<diff-base> && git diff "$DIFF_BASE" <exclude>` to get the diff (`<diff-base>`: write the sha in before dispatch, the merge base on pass 1 and `RANGE_BASE` from pass 2 on; never a shell variable; `<exclude>`: everything after `<diff-base>` on this reviewer's `DIFF_CMD:` line, verbatim; empty on `DIFF_EXCLUDE: none`). Apply the checklist against the diff.
 
 `NO FINDINGS` alone is the expected, complete result for a clean diff; never invent an item. Otherwise output one JSON object per finding per line, 400 words at most:
 {\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
@@ -802,7 +808,8 @@ After persistence, record missing output, CYCLES and fixes in the invocation rec
 Decision 1 always applies first. Then, under `frozen`, run `gstack-review-plan --base <base> --pass $PASS --last full`
 with each flag that holds (`--fixed-blocking`, `--fixed-below`, `--blocking-open`,
 `--touched-gate` for a fix to an item 2.5 path, `--critical-found` when this pass
-logged a CRITICAL, `--adversarial-ran` once Step 11's native pass ran, `--reviewed-numbers <fp>`);
+logged a CRITICAL, `--adversarial-ran` once Step 11's native pass ran, `--reviewed-numbers <fp>`,
+`--depth-floor <d>` when given);
 its `NEXT:` alone picks the next decision: `stop` 2, `full` 3, `fix-check` 3.5, `done` 4.
 Other scopes apply decisions 2–4 in order.
 

@@ -36,7 +36,7 @@ import { EXIT, exitTableHelp, type ShipReceipt } from '../lib/headless-artifacts
 import { resultLine, resultLineWithDocs } from '../lib/result-codes';
 import { versionAtRef } from '../lib/restamp';
 import { readPregateFile, verifyPregate } from '../lib/pregate/index';
-import { isUnavailable, loadPolicyFromBase, matchesAny, policyUnavailableLine, resolveBaseBranch, stampFilesInTree, validatePolicy, type ShipPolicy } from '../lib/ship-policy';
+import { isUnavailable, loadPolicyFromBase, matchesAny, policyUnavailableLine, resolveBaseBranch, runningGstackVersion, stampFilesInTree, validatePolicy, type ShipPolicy } from '../lib/ship-policy';
 import { approvalForReceipt } from '../lib/approval-citations';
 import {
   CARRY_METADATA_GLOBS, CARRY_NAMED_PATHS, CARRY_TEST_GLOBS,
@@ -44,6 +44,7 @@ import {
   receiptIssuesFrom, receiptSummaryLine, renderCensus, renderReceiptBlock, validateReceipt, type CensusPr,
 } from '../lib/ship-receipt';
 import { checkDocsCaps, docsCapLine, docsExceptionLine, parseReceiptDocs } from '../lib/ship-receipt-docs';
+import { deeper, depthBelow, exceptionProblems, parseReviewLoopException, receiptDepthAtHead, reviewLoopExceptionLine } from '../lib/ship-receipt-depth';
 import { checkReceiptProse, proseLine } from '../lib/ship-receipt-prose';
 import { resolveStateRoot } from '../lib/state-root';
 import { isRegistryUnavailable, loadRegistryFromBase } from '../lib/regen';
@@ -83,6 +84,11 @@ write flags: --pr --head --base --version --gated-tree --predecessor --gate <jso
   --review-loop <json|@file> ({passes, blocking_found, deferred[, noted, fixed, scope]}: gstack-review-scope summary --out)
   --docs <json|@file> ({status: updated|current|blocked, scope[, exception: {accepted_by, date, via, reason}]}: Step 14.5's outcome;
   blocked without an exception is DOCS_AUDIT_BLOCKED, and with --body the body must carry the exception line verbatim)
+  --review-loop-exception <json|@file> ({accepted_by, date, via, reason, fix_check: {head, findings[, files]}}: the owner accepted a
+  stop after a fix-check edit; needs --review-loop with fix_checks >= 1, fix_check.head an ancestor of the head, and with --body the
+  "Review-loop exception: …" line verbatim; else REVIEW_LOOP_EXCEPTION_INVALID). Every receipt records gstack_version and
+  review_depth: the depth HEAD needs, recomputed from the committed range (--head must be HEAD; a dirty checkout or an
+  unreadable input records full).
   --approval-run <autoplan run dir> (repeatable; resolves plan-sha citations) (W2: a class declared in origin/<base>'s
   .gstack/approval-classes.json with hits needs a citation that resolves and binds to its effects: APPROVAL_CITATION_MISSING)
   --out <file> --body <pr-body.md>. Defaults: head=HEAD, base=origin/HEAD's branch, version=the
@@ -153,8 +159,14 @@ function reviewedProduct(repoRoot: string, base: string, head: string, pregateFi
 
 function cmdWrite(rest: string[], json: boolean): number {
   const repoRoot = git(['rev-parse', '--show-toplevel']) ?? process.cwd();
-  const head = flag(rest, '--head') ?? git(['rev-parse', 'HEAD'], repoRoot);
+  const checkedOut = git(['rev-parse', 'HEAD'], repoRoot);
+  const head = flag(rest, '--head') ?? checkedOut;
   if (!head) { process.stderr.write('gstack-ship-receipt write: --head is required outside a git repository\n'); return EXIT.usage; }
+  const headSha = git(['rev-parse', '--verify', '--quiet', `${head}^{commit}`], repoRoot);
+  if (checkedOut && headSha !== checkedOut) {
+    process.stderr.write(resultLine('gstack-ship-receipt write', 'RECEIPT_INVALID', `--head ${head.slice(0, 12)} is not the checked-out HEAD ${checkedOut.slice(0, 12)}; the receipt binds the reviewed tree, so check out ${head.slice(0, 12)} and write there; nothing written`) + '\n');
+    return EXIT.fail;
+  }
   const receiptFile = flag(rest, '--receipt');
   const tree = receiptFile ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')) : null;
   let sessionKind = flag(rest, '--session-kind') ?? process.env.GSTACK_SESSION_KIND;
@@ -182,6 +194,19 @@ function cmdWrite(rest: string[], json: boolean): number {
       return EXIT.refused;
     }
   }
+  let loopException: ReturnType<typeof parseReviewLoopException> | undefined;
+  if (flag(rest, '--review-loop-exception') !== undefined) {
+    const refuse = (why: string) => { process.stderr.write(resultLineWithDocs('gstack-ship-receipt write', 'REVIEW_LOOP_EXCEPTION_INVALID', `${why}; nothing written`) + '\n'); return EXIT.fail; };
+    try { loopException = parseReviewLoopException(jsonArg(flag(rest, '--review-loop-exception'))); } catch (e: any) { return refuse(`--review-loop-exception: ${e.message}`); }
+    if (!loopException.ok) return refuse(loopException.message);
+    let loop: unknown; try { loop = jsonArg(flag(rest, '--review-loop')); } catch {}
+    if (!parseReviewLoop(loop)?.fix_checks) return refuse('--review-loop-exception needs --review-loop with fix_checks >= 1: the stop it accepts follows a fix-check');
+    const fc = loopException.exception.fix_check.head;
+    if (spawnSync('git', ['merge-base', '--is-ancestor', fc, head], { cwd: repoRoot }).status !== 0) return refuse(`fix_check.head ${fc.slice(0, 12)} is not ${head.slice(0, 12)} or an ancestor of it`);
+    const line = reviewLoopExceptionLine(loopException.exception);
+    if (bodyFile && !bodyText.split(/\r?\n/).some(l => l.trim() === line)) return refuse(`${bodyFile} does not carry the exception line verbatim: ${JSON.stringify(line)}`);
+  }
+  const reviewDepth = receiptDepthAtHead(repoRoot, base, path.dirname(Bun.fileURLToPath(import.meta.url)), headSha ?? head);
   const approval = approvalForReceipt({ repoRoot, base, head, citationText: [bodyText, ...flags(rest, '--approval')].join('\n'), runDirs: flags(rest, '--approval-run') });
   if (approval.kind === 'invalid') {
     for (const line of approval.lines) process.stderr.write(resultLine('gstack-ship-receipt write', 'APPROVAL_CLASSES_INVALID', line) + '\n');
@@ -212,6 +237,7 @@ function cmdWrite(rest: string[], json: boolean): number {
       policy: flag(rest, '--policy') ?? tree?.policy, queue_mode: flag(rest, '--queue-mode'), preregistration: flag(rest, '--preregistration'), history: flag(rest, '--history'),
       ...pregate, issues: issuesFile ? receiptIssuesFrom(issuesFile) : undefined, approval: approval.kind === 'ok' ? approval.approval : undefined,
       review_loop: reviewLoop, ...(docs?.ok ? { docs: docs.docs } : {}), ...reviewedProduct(repoRoot, base, head, pregateFile),
+      gstack_version: runningGstackVersion(), review_depth: reviewDepth, review_loop_exception: loopException?.ok ? loopException.exception : undefined,
     };
   } catch (e: any) { process.stderr.write(`gstack-ship-receipt write: ${e.message}\n`); return EXIT.usage; }
   if (input.pr !== undefined && !Number.isInteger(input.pr)) { process.stderr.write('gstack-ship-receipt write: --pr must be an integer\n'); return EXIT.usage; }
@@ -573,7 +599,19 @@ function cmdCarry(rest: string[], json: boolean): number {
   } else if (receipt.pregate && !rest.includes('--dry-run')) {
     return refused('RECEIPT_CARRY_PREGATE_STALE', `the receipt records a pregate for ${receipt.head.slice(0, 12)}; run gstack-pregate at HEAD ${head.slice(0, 12)} and pass --pregate <pregate.json>`);
   }
-  const carried = carryReceipt(pregateField ? { ...receipt, ...pregateField } : receipt, head, plan.carry, { tree: headTree, fromTree, productPatchId: headPatch });
+  let depthField: Partial<ShipReceipt> = {};
+  const isAncestor = (commit: string) => !ancestor || spawnSync('git', ['merge-base', '--is-ancestor', commit, head], { cwd: repoRoot, timeout: 30_000 }).status === 0;
+  const problems = exceptionProblems(body, receipt, isAncestor);
+  if (problems.length) return refused('RECEIPT_CARRY_REFUSED', `the receipt's owner exception does not stand: ${problems.join('; ')}; run /ship on ${head.slice(0, 12)}`);
+  if (receipt.review_depth || receipt.gstack_version) {
+    if (!receipt.review_depth) return refused('RECEIPT_CARRY_REFUSED', `the receipt records gstack_version but no review_depth, so the queue would refuse it; run /ship on ${head.slice(0, 12)}`);
+    const checkedOut = git(['rev-parse', 'HEAD'], repoRoot)?.toLowerCase();
+    if (checkedOut !== head) return refused('RECEIPT_CARRY_REFUSED', `--head ${head.slice(0, 12)} is not the checked-out HEAD ${(checkedOut ?? 'none').slice(0, 12)}; the gate scan reads the checkout, so check out ${head.slice(0, 12)} and carry there`);
+    const now = receiptDepthAtHead(repoRoot, base, path.dirname(Bun.fileURLToPath(import.meta.url)), head);
+    if (depthBelow(receipt.review_depth.depth, now.depth)) return refused('RECEIPT_CARRY_REFUSED', `HEAD ${head.slice(0, 12)} needs ${now.depth} review depth (${now.reasons.join(', ')}), above the receipt's ${receipt.review_depth.depth}; run /ship on ${head.slice(0, 12)}`);
+    depthField = { review_depth: { ...now, depth: deeper(receipt.review_depth.depth, now.depth) } };
+  }
+  const carried = carryReceipt({ ...receipt, ...pregateField, ...depthField }, head, plan.carry, { tree: headTree, fromTree, productPatchId: headPatch });
   const errors = validateReceipt(carried);
   if (errors.length) return refused('RECEIPT_CARRY_REFUSED', `the carried receipt does not validate: ${errors[0]!.message} at ${errors[0]!.path}`);
   const newBody = placeReceiptFirst(body, carried);

@@ -104,6 +104,11 @@ export interface ShipReceipt {
   carry?: { from: string; reason: string; product_patch_id: string; changed_paths: string[]; merge_commits: number; range_diff: string; covers: string[]; reruns: string[]; trees?: string[]; ancestry?: 'linear' | 'rewritten' };
   /** The reviewed head's tree and its product patch-id against the base (gstack-ship-receipt write; carry rebinds both): what a carry across rewritten history compares. */
   head_tree?: string; product_patch_id?: string;
+  /** The gstack that wrote the receipt, and the review depth the reviewed head needs, recomputed at write (lib/ship-receipt-depth.ts receiptDepthAtHead). */
+  gstack_version?: string;
+  review_depth?: { depth: 'light' | 'standard' | 'full'; class: 'docs' | 'tests' | 'code' | 'gate'; runtime_lines: number; rules: string; base: string; registry: string | null; gate_scan: { tagged: number | null; head: string }; reasons: string[] };
+  /** The owner's acceptance of a stop after a fix-check edit under frozen scope (#3559); the PR body repeats it word for word. */
+  review_loop_exception?: { accepted_by: string; date: string; via: string; reason: string; fix_check: { head: string; findings: number; files?: string[] } };
 }
 
 export const RESULT_STATUSES: readonly ResultStatus[] = ['complete', 'gate_pending', 'amend_pending', 'incomplete', 'interrupted', 'refused'];
@@ -224,7 +229,9 @@ export const ARTIFACT_SCHEMAS = {
       approval: { type: 'object', description: 'approval classes: { source, status: checked|unavailable, classes: [{ class, scope, effects, citation: verified|unverified, approved_by, date, via, binding, evidence }], report_only }' },
       review_loop: { type: 'object', required: ['passes', 'blocking_found', 'deferred'], properties: { passes: { type: 'integer', minimum: 0 }, blocking_found: { type: 'integer', minimum: 0 }, deferred: { type: 'integer', minimum: 0 }, noted: { type: 'integer', minimum: 0 }, fixed: { type: 'integer', minimum: 0 }, scope: str, fix_checks: { type: 'integer', minimum: 0 }, dispatches: { type: 'object', description: 'reviewer dispatches by role' }, est_input_tokens: { type: 'integer', minimum: 0 } } },
       carry: { type: 'object', required: ['from', 'reason', 'product_patch_id'], properties: { from: str, reason: str, product_patch_id: str, changed_paths: strList, merge_commits: { type: 'integer', minimum: 0 }, range_diff: str, covers: strList, reruns: strList, trees: strList, ancestry: { enum: ['linear', 'rewritten'] } } },
-      head_tree: str, product_patch_id: str,
+      head_tree: str, product_patch_id: str, gstack_version: str,
+      review_depth: { type: 'object', required: ['depth', 'class', 'runtime_lines', 'rules', 'base', 'gate_scan'], properties: { depth: { enum: ['light', 'standard', 'full'] }, class: { enum: ['docs', 'tests', 'code', 'gate'] }, runtime_lines: { type: 'integer', minimum: 0 }, rules: str, base: str, registry: nullableStr, gate_scan: { type: 'object', required: ['tagged', 'head'], properties: { tagged: { type: ['integer', 'null'], minimum: 0 }, head: str } }, reasons: strList } },
+      review_loop_exception: { type: 'object', required: ['accepted_by', 'date', 'via', 'reason', 'fix_check'], properties: { accepted_by: str, date: str, via: str, reason: str, fix_check: { type: 'object', required: ['head', 'findings'], properties: { head: str, findings: { type: 'integer', minimum: 0 }, files: strList } } } },
       issues: { type: 'object', properties: { fixes: { type: 'array', items: { type: 'integer' } }, refs: { type: 'array', items: { type: 'integer' } }, flakes: { type: 'array', items: { type: 'object', required: ['issue', 'run'], properties: { issue: { type: 'integer' }, run: str } } }, related: { type: 'array', items: { type: 'object', required: ['pr', 'author', 'closes'], properties: { pr: { type: 'integer' }, repo: str, author: str, closes: { type: 'array', items: { type: 'integer' } }, supersedes: { type: 'boolean' }, credit: { type: 'boolean' } } } } } },
     },
   },

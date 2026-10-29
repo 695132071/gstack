@@ -148,6 +148,16 @@ export const RELEASE_RESULT_CODES = {
     summary: 'the PR body’s /ship receipt is for another head than the one being READY’d or merged (a push after /ship, or a receipt copied from another PR)',
     fix: 'rerun /ship on the current head so the receipt names it, then gstack-ship-queue ready again; a slot’s stamp commit keeps the receipt written for its pinned head',
   },
+  QUEUE_RECEIPT_DEPTH_RAISED: {
+    anchor: 'queue-receipt-depth-raised',
+    summary: 'the PR body’s /ship receipt records a review depth below the one its head needs (the queue recomputed it from git), or a current receipt records no review_depth at all',
+    fix: 'run /ship on the head the READY names; the REVIEW_DEPTH line shows the receipt’s depth, the required depth, its reasons and inputs, and the receipt is left unchanged',
+  },
+  QUEUE_RECEIPT_EXCEPTION_INVALID: {
+    anchor: 'queue-receipt-exception-invalid',
+    summary: 'the PR body’s /ship receipt records an owner exception (docs or review loop) that is malformed, lacks the fix-check it follows, or whose line the body no longer carries verbatim',
+    fix: 'restore the exception line in the PR body word for word, or run /ship again and record the owner’s acceptance with --docs or --review-loop-exception',
+  },
   QUEUE_SCREEN_STALE_REF: {
     anchor: 'queue-screen-stale-ref',
     summary: 'GitHub’s refs/pull/<n>/merge is missing or still merges an older head than the PR’s: the PR conflicts with the base (a CHANGELOG-only conflict counts), so a screen dispatched on it would plan no cases and report success',
@@ -253,6 +263,11 @@ export const RELEASE_RESULT_CODES = {
     anchor: 'prose-lint-found',
     summary: 'the prose /ship is about to publish (a CHANGELOG entry or a PR body) carries an AI tell a regular expression can decide',
     fix: 'rewrite each PROSE: line in the draft the way its hint says, then rerun gstack-prose-lint on the same file',
+  },
+  REVIEW_LOOP_EXCEPTION_INVALID: {
+    anchor: 'review-loop-exception-invalid',
+    summary: 'write --review-loop-exception got an exception that is malformed, follows no fix-check (review_loop.fix_checks is 0 or missing), names a fix-check head that is not the receipt head or its ancestor, or is missing from the PR body',
+    fix: 'pass { accepted_by, date, via, reason, fix_check: { head, findings } } with the owner’s words, the --review-loop summary that counts the fix-check, and the printed "Review-loop exception: …" line in the body',
   },
   RECEIPT_CARRY_TREE_MISMATCH: {
     anchor: 'receipt-carry-tree-mismatch',

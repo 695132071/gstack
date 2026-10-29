@@ -2900,10 +2900,12 @@ for an older PR, write it once by hand with the same command.
 ### `RECEIPT_INVALID`
 
 **Meaning.** The block exists but does not validate against the `ship-receipt`
-schema (`gstack-artifact schema ship-receipt`).
+schema (`gstack-artifact schema ship-receipt`). `gstack-ship-receipt write`
+also refuses with this code, and writes nothing, when `--head` is not the
+checked-out HEAD: the receipt binds the tree the review read.
 
 **Fix.** Regenerate it with `gstack-ship-receipt write`; never hand-edit the
-block.
+block. For the `--head` refusal, check out that commit and write there.
 <a id="execution-unknown"></a>
 ### `EXECUTION_UNKNOWN`
 
@@ -4434,6 +4436,39 @@ written for the pinned head is the binding one and `verify --train` accepts it.
 `gstack-ship-queue ready --pr <n> --screen|--no-screen`. A lane never stamps
 to fix this: the stamp comes only when the slot is called.
 
+<a id="queue-receipt-depth-raised"></a>
+### `QUEUE_RECEIPT_DEPTH_RAISED`
+
+**Meaning.** `ready` or `train build` recomputed the review depth the head
+needs from git (the range against the base ref, `origin/<base>` in `ready`
+and `<remote>/<base>` in `train build`, the base commit's
+generated-output registry, and the receipt's gate scan when it names this
+head) and the receipt's `review_depth.depth` is below it, or the receipt comes
+from a gstack that records `gstack_version` but carries no `review_depth`. The
+`REVIEW_DEPTH:` line prints the receipt's depth, the required depth, runtime
+lines, the class, the reasons and the inputs (`base@`, `registry@`,
+`gate_scan@` or `missing`). A gate scan recorded for another head counts as
+missing, which makes the head need `full`. The receipt is unchanged.
+
+**Fix.** Run /ship on the head the READY names; it reviews at the depth
+`gstack-review-plan` plans for that head and writes a receipt that records it.
+Never edit `review_depth` by hand ([review-policy.md](review-policy.md#review-depth)).
+
+<a id="queue-receipt-exception-invalid"></a>
+### `QUEUE_RECEIPT_EXCEPTION_INVALID`
+
+**Meaning.** The receipt records an owner exception (`docs.exception` or
+`review_loop_exception`) that the queue cannot accept: the record does not
+parse, a review-loop exception names no fix-check (`review_loop.fix_checks`
+is 0 or missing), its `fix_check.head` is neither the bound head nor an
+ancestor of it (not checked after a carry across rewritten history), or the PR
+body no longer carries the exception's line word for word
+(`Documentation exception: …` or `Review-loop exception: …`).
+
+**Fix.** Restore the line in the PR body exactly as `write` printed it, or run
+/ship again and record the owner's acceptance with `--docs` or
+`--review-loop-exception` ([ship-policy.md](ship-policy.md#ship-receipt)).
+
 <a id="queue-screen-stale-ref"></a>
 ### `QUEUE_SCREEN_STALE_REF`
 
@@ -4699,13 +4734,34 @@ untracked changes (a carry certifies a commit, never a tree that differs from
 it), the receipt's head left HEAD's history and the receipt records no tree to
 compare (a receipt written before `head_tree`, whose head is not in this
 clone), or git could not compare the two product diffs or read the working
-tree's status. The receipt in the body is unchanged and still names the old
-head, so `gstack-ship-queue ready` refuses `QUEUE_RECEIPT_STALE`.
+tree's status. It also refuses when an owner exception the receipt records
+no longer stands, and, for a receipt from a gstack that records review
+depth, when HEAD needs a deeper review than the receipt records, `--head` is
+not the checked-out HEAD, or the receipt records `gstack_version` without
+`review_depth` ([ship-policy.md](ship-policy.md#ship-receipt)). The receipt in
+the body is unchanged and still names the old head, so `gstack-ship-queue
+ready` refuses `QUEUE_RECEIPT_STALE`.
 
 **Fix.** Commit or stash every working-tree change, then rerun
 `gstack-ship-receipt carry --pr <n>` at the new head. When the history is
 already rewritten and the receipt predates `head_tree`, run /ship on the new
-head; next time merge the base in instead of rebasing.
+head; next time merge the base in instead of rebasing. For a depth or
+exception refusal, run /ship on the new head (or check out `--head` and carry
+there).
+
+<a id="review-loop-exception-invalid"></a>
+### `REVIEW_LOOP_EXCEPTION_INVALID`
+
+**Meaning.** `gstack-ship-receipt write --review-loop-exception` refused the
+record and wrote nothing: it is not `{ accepted_by, date, via, reason,
+fix_check: { head, findings[, files] } }`, `--review-loop` is missing or counts
+no fix-check, `fix_check.head` is neither the receipt head nor its ancestor,
+or the `--body` file lacks the `Review-loop exception: …` line.
+
+**Fix.** Record the owner's exact words and the fix-check the stop followed,
+pass the `gstack-review-scope summary` file as `--review-loop`, put the printed
+line in the PR body, and write again
+([ship-policy.md](ship-policy.md#ship-receipt)).
 
 <a id="receipt-carry-tree-mismatch"></a>
 ### `RECEIPT_CARRY_TREE_MISMATCH`

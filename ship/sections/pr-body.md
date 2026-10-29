@@ -227,6 +227,9 @@ rm -f .gstack/tmp/review-loop.json
 `--docs` reads the record Step 14.5 saved (`{status, scope[, exception]}`): the
 receipt carries it as `docs`, and a `blocked` status without the owner's exception,
 or a body missing the exception line, is `DOCS_AUDIT_BLOCKED` with nothing written.
+When the owner accepted a stop after a fix-check edit, add
+`--review-loop-exception @<file>` (`{accepted_by, date, via, reason, fix_check: {head, findings}}`)
+and put its printed `Review-loop exception:` line in the body; never a prose line under `REVIEW_LOOP:`.
 
 The summary reads this branch's review log for the invocation's passes (its
 `REVIEW_LOOP:` line is the one the Pre-Landing Review section carries). The `&&`

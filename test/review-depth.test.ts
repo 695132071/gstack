@@ -1,6 +1,9 @@
 import { describe, test, expect } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
-import { classifyDiff, classifyPath, nextStep, planReview, scanNumbers, FULL_PASS_CAP, type PlanInput } from '../lib/review-depth';
+import { classifyDiff, classifyPath, depthFor, depthOfCommitInput, diffCommand, nextStep, planReview, scanNumbers, DEPTH_RULES, FULL_PASS_CAP, type DepthError, type PlanInput } from '../lib/review-depth';
 
 const ROOT = path.join(import.meta.dir, '..');
 const none = scanNumbers({});
@@ -73,9 +76,10 @@ describe('planReview', () => {
     const p = planReview(base({ paths: ['docs/bench.md'], scope: {}, numbers: scanNumbers({ 'docs/bench.md': ['3x faster'] }) }));
     expect(roles(p)).toEqual(['outside-voice:outside-voice:host']);
   });
-  test('tests class: testing specialist only', () => {
+  test('tests class: runtime 0 is light, core only (Behavior changes: no Testing specialist)', () => {
     const p = planReview(base({ paths: ['test/a.test.ts'], scope: { SCOPE_TESTS: 'true' } }));
-    expect(roles(p)).toEqual(['specialist:testing:full']);
+    expect(p.depth).toBe('light');
+    expect(roles(p)).toEqual([]);
   });
   test('code class pass 1: every reviewer at full effort, the outside voice at its own', () => {
     const p = planReview(base({}));
@@ -88,7 +92,7 @@ describe('planReview', () => {
   });
   test('code class honours hit-rate gating and small-diff skip', () => {
     expect(roles(planReview(base({ gated: ['simplification'] })))).not.toContain('specialist:simplification:full');
-    expect(planReview(base({ diffLines: 20 })).dispatches.filter(d => d.role === 'specialist')).toEqual([]);
+    expect(planReview(base({ diffLines: 20 })).dispatches.filter(d => d.role === 'specialist').map(d => d.name)).toEqual(['batched']);
   });
   test('pass 2 reruns the army on the range but not the adversarial or outside voice once Step 11 ran', () => {
     const p = planReview(base({ adversarialRan: true, history: { fullPasses: 1, last: 'full', fixedBlocking: true } }));
@@ -167,3 +171,121 @@ describe('GSTA-131 coverage: Red Team and specialist arms', () => {
     expect(roles(planReview(base({ paths: ['docs/a.md'], force: ['security'] })))).toEqual(['specialist:security']);
   });
 });
+
+const per = (o: Record<string, number>) => Object.entries(o).map(([p, lines]) => ({ path: p, lines, binary: false }));
+const mixed = (o: Partial<PlanInput> = {}) => base({ paths: Object.keys(o.perPath ? Object.fromEntries(o.perPath.map(e => [e.path, 1])) : {}), ...o });
+const err = (code: DepthError['code'], result?: DepthError['result']): DepthError => ({ code, detail: 'd', input: 'i', repair: 'r', ...(result ? { result } : {}) });
+
+describe('review depth: the matrix', () => {
+  test('runtime 0 (tests and docs only) is light: core only, nothing dispatched', () => {
+    const p = planReview(mixed({ perPath: per({ 'test/a.test.ts': 300, 'docs/a.md': 40 }), diffLines: 340 }));
+    expect([p.depth, p.runtimeLines, p.dispatches]).toEqual(['light', 0, []]);
+  });
+  test('runtime 1-50 is light plus one batched specialist: the fixed set, scope picks and the Red Team in one context', () => {
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 48, 'test/a.test.ts': 190, 'docs/a.md': 9 }), diffLines: 247 }));
+    expect([p.depth, p.runtimeLines]).toEqual(['light', 48]);
+    expect(p.dispatches).toEqual([
+      { role: 'specialist', name: 'batched', effort: 'full', exclude: [':(exclude)docs/a.md'], checklists: ['testing', 'maintainability', 'security', 'performance', 'red-team'] },
+      { role: 'adversarial-native', name: 'adversarial', effort: 'full', exclude: [], reason: 'backtest inconclusive (GSTA-147 D5)' },
+    ]);
+    expect(p.skipped.join('; ')).toContain('red-team (light depth');
+    expect(planReview(mixed({ perPath: per({ 'src/app.ts': 48 }), adversarialRan: true, history: { fullPasses: 1, last: 'full', touchedGate: true, fixedBelow: true } })).dispatches.some(d => d.role === 'adversarial-native')).toBe(false);
+  });
+  test('runtime 51 is standard: thresholds read runtime lines, reviewers read their own hunks', () => {
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 51, 'test/a.test.ts': 400, 'README.md': 3 }), diffLines: 454 }));
+    expect([p.depth, p.runtimeLines]).toEqual(['standard', 51]);
+    expect(roles(p)).toEqual(['specialist:testing:full', 'specialist:maintainability:full', 'specialist:performance:full', 'adversarial-native:adversarial:full', 'outside-voice:outside-voice:host']);
+    const ex = Object.fromEntries(p.dispatches.map(d => [d.name, d.exclude]));
+    expect(ex.testing).toEqual([':(exclude)README.md']);
+    expect(ex.maintainability).toEqual([':(exclude)README.md', ':(exclude)test/a.test.ts']);
+    expect([ex.adversarial, ex['outside-voice']]).toEqual([[], []]);
+  });
+  test.each([
+    ['scope error', { scope: { SCOPE_ERROR: 'boom' } }, 'scope_error', []],
+    ['gate scan unavailable', { gateTagged: null }, 'gate_scan_unavailable', []],
+    ['base registry invalid', { registry: { sha: 'abc', outputs: [], error: err('registry_invalid', 'REGEN_REGISTRY_INVALID') } }, 'registry_invalid', ['REGEN_REGISTRY_INVALID']],
+    ['base registry unavailable', { registry: { sha: null, outputs: [], error: err('registry_unavailable') } }, 'registry_unavailable', []],
+    ['numstat failure', { errors: [err('numstat_failed')] }, 'numstat_failed', []],
+    ['binary code path', { perPath: [...per({ 'src/app.ts': 5 }), { path: 'lib/x.wasm', lines: 0, binary: true }], paths: ['src/app.ts', 'lib/x.wasm'] }, 'binary_code_path', []],
+  ] as const)('%s fails closed to full with its code', (_n, o, code, codes) => {
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 5 }), ...(o as Partial<PlanInput>) }));
+    expect(p.depth).toBe('full');
+    expect(p.errors.map(e => e.code)).toContain(code);
+    expect(p.codes).toEqual([...codes]);
+    expect(roles(p)).toContain('red-team:red-team:full');
+  });
+  test.each([
+    ['a gate path', { paths: ['src/app.ts', '.github/workflows/ci.yml'] }],
+    ['a gate tag', { gateTagged: 1 }],
+    ['a deleted test', { deleted: ['test/old.test.ts'] }],
+    ['an edit to the registry', { paths: ['.gstack/generated.json'] }],
+    ['an edit to SMALL_DIFF_LINES', { paths: ['lib/review-depth.ts'] }],
+    ['the collector', { paths: ['lib/review-collect.ts'] }],
+    ['the plan CLI', { paths: ['bin/gstack-review-plan'] }],
+    ['the queue', { paths: ['lib/ship-queue-train.ts'] }],
+    ['the Step 9 template', { paths: ['ship/sections/review-army.md.tmpl'] }],
+  ] as const)('%s is full', (_n, o) => {
+    const paths = (o as any).paths ?? ['src/app.ts'];
+    expect(planReview(mixed({ perPath: per(Object.fromEntries(paths.map((p: string) => [p, 2]))), ...(o as Partial<PlanInput>) })).depth).toBe('full');
+  });
+  test('a registered glob output is excluded from runtime; a .tmpl edit plus its generated SKILL.md counts the tmpl only', () => {
+    const p = planReview(mixed({ perPath: per({ 'ship/SKILL.md.tmpl': 30, 'ship/SKILL.md': 200 }), registry: { sha: 'abc', outputs: ['*/SKILL.md'] } }));
+    expect([p.depth, p.runtimeLines]).toEqual(['light', 30]);
+    expect(p.dispatches[0]!.exclude).toEqual([':(exclude)ship/SKILL.md']);
+  });
+  test('a path no base-registry entry names stays runtime', () => {
+    expect(planReview(mixed({ perPath: per({ 'src/gen.ts': 60 }), registry: { sha: 'abc', outputs: ['lib/dom.js'] } })).runtimeLines).toBe(60);
+  });
+  test('numbers in light dispatch the outside voice with an empty exclude', () => {
+    const p = planReview(mixed({ perPath: per({ 'docs/bench.md': 4 }), numbers: scanNumbers({ 'docs/bench.md': ['3x faster'] }) }));
+    expect(p.depth).toBe('light');
+    expect(p.dispatches).toEqual([{ role: 'outside-voice', name: 'outside-voice', effort: 'host', exclude: [] }]);
+  });
+  test('a fixed blocker in light raises the next full step to the standard set, Red Team included', () => {
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 30 }), history: { fullPasses: 1, last: 'full', fixedBlocking: true } }));
+    expect([p.depth, p.stepDepth]).toEqual(['light', 'standard']);
+    expect(roles(p)).toEqual(['specialist:testing:full', 'specialist:maintainability:full', 'specialist:performance:full', 'red-team:red-team:full', 'adversarial-native:adversarial:full', 'outside-voice:outside-voice:host']);
+  });
+  test('--depth-floor raises and never lowers', () => {
+    expect(depthFor({ cls: 'code', runtimeLines: 10, errors: [], floor: 'full' })).toBe('full');
+    expect(depthFor({ cls: 'code', runtimeLines: 10, errors: [], floor: 'standard' })).toBe('standard');
+    expect(depthFor({ cls: 'gate', runtimeLines: 10, errors: [], floor: 'standard' })).toBe('full');
+    expect(depthFor({ cls: 'code', runtimeLines: 80, errors: [] })).toBe('standard');
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 10 }), floor: 'full' }));
+    expect(p.depth).toBe('full');
+    expect(p.depthReasons).toContain('floor:full');
+  });
+  test('depthOfCommitInput gives the same depth as the plan for the same input', () => {
+    const i = { paths: ['src/app.ts', 'test/a.test.ts'], perPath: per({ 'src/app.ts': 51, 'test/a.test.ts': 9 }), gateTagged: 0 };
+    expect(depthOfCommitInput(i)).toMatchObject({ depth: 'standard', runtimeLines: 51, rules: DEPTH_RULES, errors: [] });
+    expect(depthOfCommitInput({ ...i, gateTagged: null }).depth).toBe('full');
+  });
+});
+
+describe('review depth: diff commands and the rules hash', () => {
+  test('DIFF_CMD shell-quotes each pathspec; a glob character makes the pathspec literal', () => {
+    const p = planReview(mixed({ perPath: per({ 'src/app.ts': 10, "docs/my notes*.md": 3, "docs/it's.md": 1 }) }));
+    const ex = p.dispatches[0]!.exclude;
+    expect(ex).toEqual([':(exclude,literal)docs/my notes*.md', ":(exclude)docs/it's.md"]);
+    expect(diffCommand(p.dispatches[0]!)).toBe("git diff <diff-base> -- . ':(exclude,literal)docs/my notes*.md' ':(exclude)docs/it'\\''s.md'");
+    expect(diffCommand({ role: 'red-team', name: 'red-team', effort: 'full', exclude: [] })).toBe('git diff <diff-base>');
+  });
+  test('DEPTH_RULES hashes the deciding constants: a comment-only edit keeps it, a threshold edit changes it', () => {
+    expect(DEPTH_RULES).toMatch(/^[0-9a-f]{16}$/);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'depth-rules-'));
+    try {
+      const src = fs.readFileSync(path.join(ROOT, 'lib/review-depth.ts'), 'utf8');
+      fs.symlinkSync(path.join(ROOT, 'lib/ship-policy.ts'), path.join(dir, 'ship-policy.ts'));
+      const hashOf = (text: string) => {
+        fs.writeFileSync(path.join(dir, 'review-depth.ts'), text);
+        fs.writeFileSync(path.join(dir, 'print.ts'), "import { DEPTH_RULES } from './review-depth';\nconsole.log(DEPTH_RULES);\n");
+        const r = spawnSync(process.execPath, ['--no-env-file', '--config=/dev/null', path.join(dir, 'print.ts')], { encoding: 'utf8', timeout: 30_000 });
+        expect(r.status, r.stderr).toBe(0);
+        return r.stdout.trim();
+      };
+      expect(hashOf('// a comment-only edit\n' + src)).toBe(DEPTH_RULES);
+      expect(hashOf(src.replace('SMALL_DIFF_LINES = 50', 'SMALL_DIFF_LINES = 60'))).not.toBe(DEPTH_RULES);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+

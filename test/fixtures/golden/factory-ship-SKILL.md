@@ -202,11 +202,11 @@ token; `--finish` stamps the binding fields automatically. Never borrow or repla
 `gstack-wtree` prints a Git tree hash covering tracked and non-ignored untracked files,
 not a commit ID. Use `git diff <old-tree> <new-tree>` to compare these snapshots.
 
-**Review policy** (docs/review-policy.md): a finding blocks another review pass
-only when it would fail a test, break production, or lose data or secrets;
-everything below that floor ships as a named note in the PR body. Pass 1 reviews
-the diff; a later pass reads only the range; two full passes plus one fix-check
-is the cap. `NO FINDINGS` is a complete reviewer result. `ship: review_scope` (Step 3)
+**Review policy** (docs/review-policy.md): only a finding that would fail a test,
+break production, or lose data or secrets blocks a pass; the rest is a PR-body
+note. Step 9's plan sets both reviews' depth (`--depth-floor standard|full` only
+raises it). Pass 1 reads the diff, later passes the range; the cap is two full
+passes and a fix-check. `NO FINDINGS` is complete. `ship: review_scope` (Step 3)
 is the knob; the receipt's `review_loop` records the outcome.
 
 ### Ship control flow
